@@ -1,0 +1,10 @@
+﻿OK    C:\Windows\system32  -> 40x40 InteropBitmap
+OK    C:\Windows\notepad.exe  -> 40x40 InteropBitmap
+OK    C:\Windows\explorer.exe  -> 40x40 InteropBitmap
+OK    C:\Users\59869\AppData\Local\Temp\dsh-dqzi94\sm-test-data\readme.txt  -> 40x40 InteropBitmap
+OK    C:\definitely\missing\thing.txt  -> 40x40 InteropBitmap
+config: E:\ShortcutManager\src\ShortcutManager\bin\Release\net9.0-windows\config.json (portable=True)
+loaded groups: 1, items: 0
+name(file) = 'report.final'  (expect 'report.final')
+name(dir)  = 'MyFolder'  (expect 'MyFolder')
+RESULT 7/7

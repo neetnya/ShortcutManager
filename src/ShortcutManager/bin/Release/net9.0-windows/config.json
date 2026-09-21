@@ -1,0 +1,94 @@
+[
+    {
+        "Name":  "常用",
+        "Id":  "g1",
+        "Items":  [
+                      {
+                          "Path":  "C:\\Users\\59869\\AppData\\Local\\Temp\\dsh-dqzi94\\sm-final-data\\AlphaDocs",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Users\\59869\\AppData\\Local\\Temp\\dsh-dqzi94\\sm-final-data\\BetaImages",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Users\\59869\\AppData\\Local\\Temp\\dsh-dqzi94\\sm-final-data\\GammaDL",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Users\\59869\\AppData\\Local\\Temp\\dsh-dqzi94\\sm-final-data\\DeltaVault",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Users\\59869\\AppData\\Local\\Temp\\dsh-dqzi94\\sm-final-data\\readme.txt",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Users\\59869\\AppData\\Local\\Temp\\dsh-dqzi94\\sm-final-data\\notes.md",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Users\\59869\\AppData\\Local\\Temp\\dsh-dqzi94\\sm-final-data\\report.docx",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Users\\59869\\AppData\\Local\\Temp\\dsh-dqzi94\\sm-final-data\\data.xlsx",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Users\\59869\\AppData\\Local\\Temp\\dsh-dqzi94\\sm-final-data\\photo.png",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Windows\\System32\\notepad.exe",
+                          "DisplayName":  "记事本",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Windows\\explorer.exe",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Windows\\System32\\calc.exe",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      },
+                      {
+                          "Path":  "C:\\Windows\\System32\\mspaint.exe",
+                          "DisplayName":  "",
+                          "CachedIcon":  null
+                      }
+                  ]
+    },
+    {
+        "Name":  "工作",
+        "Id":  "g2",
+        "Items":  [
+
+                  ]
+    },
+    {
+        "Name":  "娱乐",
+        "Id":  "g3",
+        "Items":  [
+
+                  ]
+    },
+    {
+        "Name":  "学习",
+        "Id":  "g4",
+        "Items":  [
+
+                  ]
+    }
+]

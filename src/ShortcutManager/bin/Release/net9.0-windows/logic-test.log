@@ -1,0 +1,81 @@
+
+== 命名规则 ==
+  [PASS] 文件名去扩展名: got 'report.final'
+  [PASS] 文件夹名保持不变: got 'MyFolder'
+  [PASS] 无扩展名文件: got 'noext'
+  [PASS] 根目录不崩: got 'True'
+
+== 路径规范化 ==
+  [PASS] 大小写归一: got 'c:\foo\bar'
+  [PASS] 结尾斜杠归一: got 'c:\foo'
+  [PASS] 盘符根: got 'c:\'
+
+== 分组与条目操作 ==
+  [PASS] 初始分组数: got '2'
+  [PASS] 默认选中第一个: got 'G1'
+  [PASS] 导入 4 项: got '4'
+  [PASS] 组内条目数: got '4'
+  [PASS] 重复导入被忽略: got '0'
+  [PASS] 条目数未变: got '4'
+  [PASS] 不存在的路径被忽略: got '0'
+  [PASS] 文件夹被识别: got 'True'
+  [PASS] 文件被识别: got 'False'
+  before reorder: AlphaDocs | BetaImages | readme | notes
+  after  reorder: BetaImages | readme | AlphaDocs | notes
+  [PASS] 排序后元素仍在: got '4'
+  [PASS] 排序后 src 位置: got '2'
+  [PASS] 排序后顺序符合预期: got 'BetaImages,readme,AlphaDocs,notes'
+  [PASS] 模型集合同步: got 'C:\Users\59869\AppData\Local\Temp\dsh-dqzi94\sm-logic-test\BetaImages,C:\Users\59869\AppData\Local\Temp\dsh-dqzi94\sm-logic-test\readme.txt,C:\Users\59869\AppData\Local\Temp\dsh-dqzi94\sm-logic-test\AlphaDocs,C:\Users\59869\AppData\Local\Temp\dsh-dqzi94\sm-logic-test\notes.md'
+  [PASS] 移到末尾: got 'BetaImages'
+  [PASS] 模型同步(末尾): got 'C:\Users\59869\AppData\Local\Temp\dsh-dqzi94\sm-logic-test\BetaImages'
+  [PASS] 重命名进入编辑态: got 'True'
+  [PASS] 重命名生效: got '我的自定义名字'
+  [PASS] 重命名退出编辑态: got 'False'
+  [PASS] 改回默认名清空覆盖: got ''
+  [PASS] 默认名恢复: got 'readme'
+  [PASS] 取消重命名不写入: got 'readme'
+
+== 跨组移动 ==
+  [PASS] 跨组移动返回 true: got 'True'
+  [PASS] 源组 -1: got '3'
+  [PASS] 目标组 +1: got '1'
+  [PASS] 目标组末尾是新项: got 'C:\Users\59869\AppData\Local\Temp\dsh-dqzi94\sm-logic-test\readme.txt'
+  [PASS] 源组模型同步: got 'False'
+  [PASS] 目标组模型同步: got 'True'
+  [PASS] 同组移动返回 false: got 'False'
+
+== 移除条目 ==
+  [PASS] 条目移除: got '2'
+  [PASS] 模型移除: got 'False'
+  [PASS] 磁盘文件未被删除: got 'True'
+
+== 分组增删 ==
+  [PASS] 新增分组: got '3'
+  [PASS] 新分组被选中: got 'True'
+  [PASS] 分组重命名: got '重命名后的组'
+  [PASS] 空名回退: got '未命名分组'
+  [PASS] 分组左移: got 'G2'
+  [PASS] 分组右移: got 'G2'
+  [PASS] 越界左移无效: got 'False'
+  [PASS] 越界右移无效: got 'False'
+  [PASS] 保留最后一个分组: got '1'
+  [PASS] 拒绝删除最后一个分组: got 'False'
+
+== 配置往返 ==
+  saving group 'G1' with 2 items via E:\ShortcutManager\src\ShortcutManager\bin\Release\net9.0-windows\config.json
+  [PASS] svc save 无错误: got ''
+  [PASS] 配置文件存在: got 'True'
+  [PASS] 便携位置: got 'True'
+  reloaded 1 group(s): G1(2)
+  [PASS] 分组被持久化: got 'True'
+  [PASS] 条目数被持久化: got '2'
+  [PASS] 自定义名被持久化: got 'True'
+  [PASS] 二次保存覆盖成功: got '2'
+  [PASS] 损坏配置回退到默认分组: got '1'
+  [PASS] 损坏配置已备份: got 'True'
+
+== 写入失败回退 ==
+  [PASS] 锁定时不会假装写成功: got 'True'
+  (threw=True)
+
+RESULT pass=58 fail=0

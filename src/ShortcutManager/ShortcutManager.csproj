@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <AssemblyName>ShortcutManager</AssemblyName>
+    <RootNamespace>ShortcutManager</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>快捷方式管理器</Product>
+    <AssemblyTitle>快捷方式管理器</AssemblyTitle>
+    <Company>Portable</Company>
+
+    <!-- 便携：不生成 pdb，单文件输出，且不裁剪（WPF 反射需要完整程序集） -->
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <SatelliteResourceLanguages>zh-Hans;en</SatelliteResourceLanguages>
+
+    <!-- 启动速度：关闭不必要的分析器，ReadyToRun 在发布时开启 -->
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <TieredPGO>true</TieredPGO>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+
+    <!-- UseWindowsForms 会引入与 WPF 冲突的全局 using（Application/Point/KeyEventArgs 等），在下面的 ItemGroup 里去掉 -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+</Project>
