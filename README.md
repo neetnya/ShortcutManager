@@ -6,17 +6,18 @@
 
 ## 特性
 
-- **启动快** — 冷启动到窗口出现约 **500 ms**（本机 125% 缩放、.NET 9 环境实测中位数）
+- **启动快** — 冷启动到窗口出现约 **500 ms**
 - **小窗口居中** — 打开即出现在屏幕中央，可自由拖动/缩放
 - **分组 = Tab** — 分组数量不限，点击 tab 切换；分组可重命名、左右移动、删除
 - **每行固定四个** — 一行四格、紧凑排列，数量不限，超出自动滚动
 - **自动取图标** — 文件夹显示文件夹图标，文件显示系统里该文件类型的图标
 - **默认名字** — 文件夹名 / 不含扩展名的文件名，例如 `report.docx` → `report`
 - **双击打开** — 双击格子打开文件或文件夹（用系统默认程序）
-- **右键菜单** — 打开 / 在资源管理器中显示 / 重命名 / 发送到其他分组 / 移除 / 打开所在目录 / 复制路径
+- **右键菜单** — 打开 / 在资源管理器中显示 / 重命名 / 编辑路径 / 发送到其他分组 / 移除 / 打开所在目录 / 复制路径
 - **拖拽排序** — 按住格子拖到目标位置，左侧或右侧出现蓝色插入线，松手即完成排序
 - **拖入即导入** — 从资源管理器把文件/文件夹直接拖进窗口就能添加
-- **便携** — 配置存在 exe 同目录的 `config.json`，整个文件夹拷走即可迁移
+- **便携** — 配置存在 exe 同目录的 `config.json`，整个文件夹拷走即可迁移；
+  位于程序目录内的条目自动存为**相对路径**，迁移后依然有效
 
 ## 快速开始
 
@@ -74,6 +75,10 @@
 配置采用**原子写入**（先写临时文件再替换），写入过程中断电不会损坏已有配置。
 如果配置文件被外部破坏，程序会把它备份为 `config.json.bak` 并回到默认分组，不会静默丢数据。
 
+添加（或右键编辑路径）时，如果目标与 exe 同目录或位于其子目录，
+`config.json` 里会存成相对路径（如 `tools\report.docx`），使用时再按程序目录解析回完整路径；
+目录之外的条目仍存绝对路径。这样连同数据一起把整个文件夹拷到别的机器/盘符，条目不会失效。
+
 ## 运行环境
 
 需要 **.NET 9 桌面运行时**（Windows Desktop Runtime）。
@@ -83,7 +88,7 @@
   **Desktop Runtime**（x64）安装即可
 
 > 之所以不打包成自包含单文件：那样体积会到 60–80 MB。
-> 如果你更看重「拷到任何机器都能跑」，把 `src/ShortcutManager/ShortcutManager.csproj`
+> 如果你更看重「拷到任何机器都能跑」，把 `src/ShortcutManager.csproj`
 > 里的发布参数加上 `-r win-x64 --self-contained true /p:PublishSingleFile=true` 重新发布即可
 > （见 `tools/publish.ps1`）。
 
@@ -91,7 +96,7 @@
 
 ```powershell
 # 开发构建
-dotnet build src\ShortcutManager\ShortcutManager.csproj -c Release
+dotnet build src\ShortcutManager.csproj -c Release
 
 # 生成便携包到 dist\ShortcutManager\
 powershell -ExecutionPolicy Bypass -File tools\publish.ps1
@@ -100,9 +105,10 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1
 ## 项目结构
 
 ```
-src/ShortcutManager/
+src/
   App.xaml(.cs)              程序入口、单实例、退出
-  MainWindow.xaml(.cs)       界面与全部交互（tab / 网格 / 右键 / 拖拽 / 重命名）
+  MainWindow.xaml(.cs)       界面与全部交互（tab / 网格 / 右键 / 拖拽 / 重命名 / 编辑路径）
+  PathEditDialog.xaml(.cs)   编辑路径对话框
   Converters.cs              bool -> Visibility
   WindowEffects.cs           Win11 圆角（失败无副作用）
   Models/
@@ -110,6 +116,7 @@ src/ShortcutManager/
     ShortcutGroup.cs         一个分组：名字 + 条目列表
   Services/
     ConfigStore.cs           便携式配置读写（原子写入 + 损坏容灾）
+    PathResolver.cs          便携相对路径：存储转换 + 解析
     ShellIcons.cs            Win32 Shell API 取系统图标 + 兜底图标
     Launcher.cs              双击打开 / 资源管理器定位
     ImportService.cs         路径导入 + 图标预热
@@ -118,8 +125,11 @@ src/ShortcutManager/
     ShortcutGroupViewModel.cs
     ShortcutViewModel.cs
   SelfTest.cs                --selftest：图标 / 配置 / 命名规则自检
-  LogicTests.cs              --test：57 项逻辑回归测试
-tools/                       构建、发布与验证脚本
+  LogicTests.cs              --test：70+ 项逻辑回归测试
+tools/
+  publish.ps1                生成 dist\ShortcutManager\ 便携包
+  verify.ps1                 逻辑测试 + 自检 + 启动耗时 + 截图
+  make-icon.ps1              重新生成 app.ico
 ```
 
 ## 自检与测试
@@ -132,7 +142,8 @@ $exe = "dist\ShortcutManager\ShortcutManager.exe"
 # 图标提取、配置读写、命名规则
 & $exe --selftest      # 结果写入 exe 同目录 selftest.log，退出码 0 = 全通过
 
-# 57 项逻辑测试：分组/条目增删改、排序、跨组移动、去重、配置往返与损坏容灾
+# 70+ 项逻辑测试：分组/条目增删改、排序、跨组移动、去重、
+# 相对路径转换与导入、配置往返与损坏容灾
 & $exe --test          # 结果写入 logic-test.log，退出码 0 = 全通过
 ```
 
@@ -140,13 +151,8 @@ $exe = "dist\ShortcutManager\ShortcutManager.exe"
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\verify.ps1     # 逻辑测试 + 自检 + 启动耗时 + 截图
-powershell -ExecutionPolicy Bypass -File tools\accept.ps1     # 对 dist 发布包做端到端验收
 powershell -ExecutionPolicy Bypass -File tools\publish.ps1    # 生成 dist\ShortcutManager\
 ```
-
-`tools\accept.ps1` 会在真实窗口上验证：居中（实测 dx=0 dy=0）、关闭即退出、
-配置落盘、单实例（重复启动不会再开一个进程）、重启后数据完整、
-**非置顶（`WS_EX_TOPMOST` 未设置）**。
 
 ### 开发用调试参数
 

@@ -1,9 +1,10 @@
 $ErrorActionPreference = 'Stop'
 
-$dir     = 'E:\ShortcutManager\src\ShortcutManager\bin\Release\net9.0-windows'
+$dir     = Join-Path $PSScriptRoot '..\src\bin\Release\net9.0-windows'
 $exe     = Join-Path $dir 'ShortcutManager.exe'
 $cfg     = Join-Path $dir 'config.json'
-$shotDir = 'E:\ShortcutManager\tools\shots'
+$shotDir = Join-Path $PSScriptRoot 'shots'
+New-Item -ItemType Directory -Force -Path $shotDir | Out-Null
 
 function Stop-App { Get-Process ShortcutManager -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Milliseconds 400 }
 function Cn([int[]]$cp) { -join ($cp | ForEach-Object { [char]$_ }) }

@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'
 
-$proj = Join-Path $PSScriptRoot '..\src\ShortcutManager\ShortcutManager.csproj'
+$proj = Join-Path $PSScriptRoot '..\src\ShortcutManager.csproj'
 $proj = (Resolve-Path $proj).Path
 
 Write-Host "publishing $proj ($Configuration) -> $OutDir"

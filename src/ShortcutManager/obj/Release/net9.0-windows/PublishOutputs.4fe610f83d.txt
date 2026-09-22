@@ -1,4 +1,0 @@
-E:\ShortcutManager\dist\ShortcutManager\ShortcutManager.exe
-E:\ShortcutManager\dist\ShortcutManager\ShortcutManager.dll
-E:\ShortcutManager\dist\ShortcutManager\ShortcutManager.deps.json
-E:\ShortcutManager\dist\ShortcutManager\ShortcutManager.runtimeconfig.json
