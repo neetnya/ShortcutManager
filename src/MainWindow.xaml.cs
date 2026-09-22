@@ -47,6 +47,7 @@ public partial class MainWindow : Window
 
         Loaded += OnLoaded;
         Closing += OnClosing;
+        StateChanged += OnStateChanged;
         PreviewKeyDown += OnPreviewKeyDown;
         AllowDrop = true;
         Drop += Window_Drop;
@@ -100,6 +101,39 @@ public partial class MainWindow : Window
                     CaptureToFile(outPath);
                     Application.Current.Shutdown();
                 }));
+            }));
+        }
+
+        // ---- 托盘行为验证：最小化→托盘→恢复→关闭，结果写入 tray-test.log ----
+        if (args.Any(a => a == "--traytest"))
+        {
+            _trayLog = new List<string>();
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(async () =>
+            {
+                await Task.Delay(700);
+
+                var ok = true;
+                TrayTestLog($"start: visible={IsVisible} inTaskbar={ShowInTaskbar} state={WindowState}");
+                ok &= IsVisible && ShowInTaskbar && WindowState == WindowState.Normal;
+
+                // 1) 最小化（点标题栏最小化按钮 / Esc / Ctrl+W 都走这条路径）
+                WindowState = WindowState.Minimized;
+                await Task.Delay(500);
+                var toTray = !IsVisible && !ShowInTaskbar && _tray is { IsVisible: true };
+                TrayTestLog($"expect-to-tray(窗口隐藏+无任务栏按钮+托盘图标存在)={toTray}");
+                ok &= toTray;
+
+                // 2) 从托盘恢复
+                RestoreFromTray();
+                await Task.Delay(500);
+                var back = IsVisible && ShowInTaskbar && WindowState == WindowState.Normal;
+                TrayTestLog($"expect-restored(窗口可见+任务栏按钮+Normal)={back}");
+                ok &= back;
+
+                // 3) 关闭 = 真退出：Close() 后进程结束，结论用退出码表达
+                TrayTestLog($"result={(ok ? "PASS" : "FAIL")}");
+                Environment.ExitCode = ok ? 0 : 1;
+                Close();
             }));
         }
     }
@@ -166,7 +200,11 @@ public partial class MainWindow : Window
     {
         // 关闭就是关闭：保存配置后让窗口正常关闭，进程随之退出。
         // （ShutdownMode = OnMainWindowClose）
+        _exiting = true;
         ViewModel.Save();
+        _tray?.Dispose();   // 摘掉托盘图标，别在托盘里留幽灵图标
+        _tray = null;
+        TrayTestLog("closing: 关闭事件已触发，配置已保存，托盘图标已释放");
     }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -178,6 +216,76 @@ public partial class MainWindow : Window
             WindowState = WindowState.Minimized;
             e.Handled = true;
         }
+    }
+
+    // ==================================================================
+    //  最小化到托盘 / 关闭即退出
+    // ==================================================================
+
+    private TrayIcon? _tray;
+    private bool _inTray;
+    private bool _exiting;
+
+    private TrayIcon Tray
+    {
+        get
+        {
+            if (_tray is null)
+            {
+                _tray = new TrayIcon();
+                _tray.Activated += RestoreFromTray;
+                _tray.ExitRequested += ExitFromTray;
+            }
+            return _tray;
+        }
+    }
+
+    /// <summary>最小化 → 收进托盘（任务栏按钮同时消失），程序继续在后台运行。</summary>
+    private void OnStateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized) HideToTray();
+    }
+
+    private void HideToTray()
+    {
+        if (_inTray || _exiting) return;
+
+        _inTray = true;
+        Tray.Show();                // 第一次最小化时才创建托盘图标
+        ShowInTaskbar = false;
+        Hide();
+        ViewModel.StatusText = "已最小化到托盘，双击托盘图标即可恢复";
+        TrayTestLog($"minimized: visible={IsVisible} inTaskbar={ShowInTaskbar} " +
+                    $"state={WindowState} tray={_tray?.IsVisible == true}");
+    }
+
+    /// <summary>从托盘恢复窗口（重复启动 exe、双击托盘图标、点菜单“显示主窗口”都会走这里）。</summary>
+    public void RestoreFromTray()
+    {
+        if (_exiting) return;
+
+        _inTray = false;
+        ShowInTaskbar = true;
+        WindowState = WindowState.Normal;   // 窗口此时是隐藏的，改状态不会闪一下
+        Show();
+        Activate();
+        TrayTestLog($"restored: visible={IsVisible} inTaskbar={ShowInTaskbar} state={WindowState}");
+    }
+
+    private void ExitFromTray()
+    {
+        _exiting = true;
+        Close();   // 走正常关闭流程：存盘 + 释放托盘图标 + 退出进程
+    }
+
+    /// <summary>开发验证用：--traytest 把最小化/恢复/关闭的每一步状态写入 tray-test.log。</summary>
+    private List<string>? _trayLog;
+
+    private void TrayTestLog(string line)
+    {
+        if (_trayLog is null) return;
+        _trayLog.Add(line);
+        TryWriteLog("tray-test.log", _trayLog.ToArray());
     }
 
     // ==================================================================
@@ -217,14 +325,119 @@ public partial class MainWindow : Window
         if (ViewModel.SelectedGroup is { } group) BeginGroupRename(group);
     }
 
-    private void MoveGroupLeft_Click(object sender, RoutedEventArgs e)
+    // ---- 分组标签拖拽排序 ----
+
+    private const string GroupDragFormat = "ShortcutManager.GroupTab";
+
+    private Point _tabDragStart;
+    private ShortcutGroupViewModel? _tabDragCandidate;
+    private ShortcutGroupViewModel? _tabDragSource;
+    private bool _tabInsertAfter;
+
+    private ShortcutGroupViewModel? GroupFrom(object? source)
     {
-        if (ViewModel.SelectedGroup is { } g) ViewModel.MoveGroup(g, -1);
+        if (source is not DependencyObject d) return null;
+        return FindAncestor<ListBoxItem>(d)?.DataContext as ShortcutGroupViewModel;
     }
 
-    private void MoveGroupRight_Click(object sender, RoutedEventArgs e)
+    private void TabList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (ViewModel.SelectedGroup is { } g) ViewModel.MoveGroup(g, +1);
+        _tabDragStart = e.GetPosition(this);
+        // 正在就地重命名时不参与拖拽
+        _tabDragCandidate = GroupFrom(e.OriginalSource) is { IsRenaming: false } g ? g : null;
+    }
+
+    private void TabList_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _tabDragCandidate is null) return;
+        if (Keyboard.FocusedElement is TextBox) return;
+
+        var delta = e.GetPosition(this) - _tabDragStart;
+        if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+
+        var group = _tabDragCandidate;
+        _tabDragCandidate = null;
+
+        var data = new DataObject(GroupDragFormat, group);
+        _tabDragSource = group;
+        try
+        {
+            DragDrop.DoDragDrop(TabList, data, DragDropEffects.Move);
+        }
+        finally
+        {
+            _tabDragSource = null;
+            ClearGroupDragMarkers();
+        }
+    }
+
+    private void TabList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => _tabDragCandidate = null;
+
+    private void TabList_DragOver(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(GroupDragFormat) && _tabDragSource is not null)
+        {
+            e.Effects = DragDropEffects.Move;
+            UpdateGroupDropMarker(e);
+            e.Handled = true;
+        }
+        else if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            // 文件拖到标签栏：不在这里处理，冒泡给窗口级处理器（导入当前分组）
+            e.Effects = DragDropEffects.Copy;
+        }
+        else
+        {
+            e.Effects = DragDropEffects.None;
+        }
+    }
+
+    private void TabList_DragLeave(object sender, DragEventArgs e) => ClearGroupDragMarkers();
+
+    private void TabList_Drop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(GroupDragFormat)) return;   // 文件拖入交给窗口级处理器
+
+        ClearGroupDragMarkers();
+        e.Handled = true;
+
+        if (e.Data.GetData(GroupDragFormat) is not ShortcutGroupViewModel source) return;
+
+        var target = GroupFrom(e.OriginalSource);
+        if (target is null)
+        {
+            if (ViewModel.MoveGroupToEnd(source)) ViewModel.StatusText = $"“{source.Name}”已移到最后";
+            return;
+        }
+
+        if (ViewModel.MoveGroupTo(source, target, _tabInsertAfter))
+            ViewModel.StatusText = $"“{source.Name}”已重新排序";
+    }
+
+    /// <summary>鼠标落在标签的右半边 → 插到它后面，左半边 → 插到前面。</summary>
+    private void UpdateGroupDropMarker(DragEventArgs e)
+    {
+        var target = GroupFrom(e.OriginalSource);
+        var source = _tabDragSource;
+
+        foreach (var g in ViewModel.Groups)
+            if (!ReferenceEquals(g, target)) g.ClearDragMarker();
+
+        if (target is null || source is null || ReferenceEquals(target, source)) return;
+
+        if (TabList.ItemContainerGenerator.ContainerFromItem(target) is not ListBoxItem container ||
+            container.ActualWidth <= 0)
+            return;
+
+        _tabInsertAfter = e.GetPosition(container).X > container.ActualWidth / 2;
+        if (_tabInsertAfter) target.IsDragTargetAfter = true;
+        else target.IsDragTarget = true;
+    }
+
+    private void ClearGroupDragMarkers()
+    {
+        foreach (var g in ViewModel.Groups) g.ClearDragMarker();
     }
 
     private void TabList_MouseDoubleClick(object sender, MouseButtonEventArgs e)

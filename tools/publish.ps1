@@ -22,7 +22,7 @@ if ($LASTEXITCODE -ne 0) { throw "publish failed with exit code $LASTEXITCODE" }
 
 # The portable config.json is created by the app at first run.
 # Only remove development-time logs here.
-foreach ($junk in 'logic-test.log', 'selftest.log', 'diag.log', 'shot.log', 'config.json.tmp') {
+foreach ($junk in 'logic-test.log', 'selftest.log', 'tray-test.log', 'diag.log', 'shot.log', 'config.json.tmp') {
     $f = Join-Path $OutDir $junk
     if (Test-Path $f) { Remove-Item $f -Force }
 }

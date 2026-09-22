@@ -154,11 +154,11 @@ public partial class App : Application
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
 
-    /// <summary>把窗口还原到前台（重复启动 exe、或从最小化恢复时用）。</summary>
+    /// <summary>把窗口还原到前台（重复启动 exe、或从托盘/最小化恢复时用）。</summary>
     public void BringToFront()
     {
         if (_window is null) return;
-        _window.Show();
+        _window.RestoreFromTray();   // 可能正藏在托盘里
         ForceForeground(_window);
     }
 

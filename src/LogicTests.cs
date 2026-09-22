@@ -16,6 +16,25 @@ internal static class LogicTests
 
     public static int Run()
     {
+        // 测试会像真实使用那样反复写 config.json，所以必须在【任何一次 Save 之前】
+        // 把真实配置原样备份，跑完再还原——否则备份到的是测试自己写进去的数据。
+        var realCfg = new ConfigStore().FilePath;
+        var realBackup = realCfg + ".logicbak";
+        var hadReal = File.Exists(realCfg);
+        if (hadReal)
+        {
+            try { File.Copy(realCfg, realBackup, true); } catch { /* ignore */ }
+        }
+
+        // 损坏容灾用例会覆盖 .bak，同样先存一份
+        var realBak = realCfg + ".bak";
+        var realBakBackup = realBak + ".logicbak";
+        var hadRealBak = File.Exists(realBak);
+        if (hadRealBak)
+        {
+            try { File.Copy(realBak, realBakBackup, true); } catch { /* ignore */ }
+        }
+
         var sandbox = Path.Combine(Path.GetTempPath(), "sm-logic-test");
         if (Directory.Exists(sandbox)) Directory.Delete(sandbox, recursive: true);
         Directory.CreateDirectory(sandbox);
@@ -190,14 +209,20 @@ internal static class LogicTests
         vm.SelectedGroup.CommitRename();
         Check("空名回退", vm.Groups[^1].Name, "未命名分组");
 
-        // 移动分组
+        // 分组拖拽排序
+        Section("分组拖拽排序");
         var secondName = vm.Groups[1].Name;
-        vm.MoveGroup(vm.Groups[1], -1);
-        Check("分组左移", vm.Groups[0].Name, secondName);
-        vm.MoveGroup(vm.Groups[0], +1);
-        Check("分组右移", vm.Groups[1].Name, secondName);
-        Check("越界左移无效", vm.MoveGroup(vm.Groups[0], -1), false);
-        Check("越界右移无效", vm.MoveGroup(vm.Groups[^1], +1), false);
+        Check("拖到目标前面", vm.MoveGroupTo(vm.Groups[1], vm.Groups[0], false), true);
+        Check("顺序已改变", vm.Groups[0].Name, secondName);
+        Check("拖到自己无效", vm.MoveGroupTo(vm.Groups[0], vm.Groups[0], true), false);
+        Check("拖到目标后面", vm.MoveGroupTo(vm.Groups[0], vm.Groups[1], true), true);
+        Check("顺序已还原", vm.Groups[1].Name, secondName);
+        Check("落点未变时不算位移", vm.MoveGroupTo(vm.Groups[1], vm.Groups[0], true), false);
+        Check("拖到末尾", vm.MoveGroupToEnd(vm.Groups[0]), true);
+        Check("已在末尾时返回 false", vm.MoveGroupToEnd(vm.Groups[^1]), false);
+        Check("分组顺序与模型一致",
+            string.Join("|", vm.Groups.Select(g => g.Name)),
+            string.Join("|", vm.Groups.Select(g => g.Model.Name)));
 
         // 删除分组
         while (vm.Groups.Count > 1) vm.RemoveGroup(vm.Groups[^1]);
@@ -207,13 +232,8 @@ internal static class LogicTests
         // ---------- 配置往返 ----------
         Section("配置往返");
 
-        // 逻辑测试要独立于真实配置：临时接管 store，跑完再还原
-        var realCfg = store.FilePath;
-        var realBackup = realCfg + ".logicbak";
-        var hadReal = File.Exists(realCfg);
-        if (hadReal) File.Copy(realCfg, realBackup, true);
-
-        // 清掉真实配置，确保 Save 走的是“新建文件”这条路径
+        // 真实配置已在 Run() 开头备份（见文件顶部说明），这里只需清掉当前文件，
+        // 确保 Save 走的是“新建文件”这条路径
         try { File.Delete(realCfg); } catch { /* ignore */ }
 
         var g = vm.Groups[0];
@@ -289,6 +309,13 @@ internal static class LogicTests
         {
             if (hadReal) { File.Copy(realBackup, realCfg, true); File.Delete(realBackup); }
             else { File.Delete(realCfg); }
+        }
+        catch { /* ignore */ }
+
+        try
+        {
+            if (hadRealBak) { File.Copy(realBakBackup, realBak, true); File.Delete(realBakBackup); }
+            else { File.Delete(realBak); }
         }
         catch { /* ignore */ }
 

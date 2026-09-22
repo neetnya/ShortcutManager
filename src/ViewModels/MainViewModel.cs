@@ -115,12 +115,35 @@ public sealed class MainViewModel : ObservableObject
         return true;
     }
 
-    public bool MoveGroup(ShortcutGroupViewModel group, int delta)
+    /// <summary>分组拖拽排序：把 source 移到 target 的前/后。返回是否真的发生了位移（没位移就不写盘）。</summary>
+    public bool MoveGroupTo(ShortcutGroupViewModel source, ShortcutGroupViewModel target, bool insertAfter)
     {
-        var i = Groups.IndexOf(group);
-        var j = i + delta;
-        if (i < 0 || j < 0 || j >= Groups.Count) return false;
-        Groups.Move(i, j);
+        if (ReferenceEquals(source, target)) return false;
+
+        var from = Groups.IndexOf(source);
+        if (from < 0) return false;
+
+        Groups.RemoveAt(from);
+        var to = Groups.IndexOf(target);
+        if (to < 0) to = Groups.Count - 1;
+        if (insertAfter) to++;
+
+        to = Math.Clamp(to, 0, Groups.Count);
+        Groups.Insert(to, source);
+
+        if (to == from) return false;
+
+        Save();
+        return true;
+    }
+
+    /// <summary>分组拖到标签栏空白处 → 移到最后。</summary>
+    public bool MoveGroupToEnd(ShortcutGroupViewModel source)
+    {
+        var from = Groups.IndexOf(source);
+        if (from < 0 || from == Groups.Count - 1) return false;
+        Groups.RemoveAt(from);
+        Groups.Add(source);
         Save();
         return true;
     }

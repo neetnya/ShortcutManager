@@ -9,6 +9,8 @@ public sealed class ShortcutGroupViewModel : ObservableObject
     private string _name;
     private bool _isRenaming;
     private string _renameBuffer = string.Empty;
+    private bool _isDragTarget;
+    private bool _isDragTargetAfter;
 
     public ShortcutGroupViewModel(ShortcutGroup model)
     {
@@ -45,6 +47,26 @@ public sealed class ShortcutGroupViewModel : ObservableObject
     public string TabTitle => $"{Name} ({Items.Count})";
 
     public void NotifyCountChanged() => Raise(nameof(TabTitle));
+
+    /// <summary>拖拽时作为插入点高亮（插到该标签左侧）。</summary>
+    public bool IsDragTarget
+    {
+        get => _isDragTarget;
+        set => Set(ref _isDragTarget, value);
+    }
+
+    /// <summary>拖拽时作为插入点高亮（插到该标签右侧）。</summary>
+    public bool IsDragTargetAfter
+    {
+        get => _isDragTargetAfter;
+        set => Set(ref _isDragTargetAfter, value);
+    }
+
+    public void ClearDragMarker()
+    {
+        if (_isDragTarget) IsDragTarget = false;
+        if (_isDragTargetAfter) IsDragTargetAfter = false;
+    }
 
     public void BeginRename()
     {

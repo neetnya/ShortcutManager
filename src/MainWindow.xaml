@@ -148,9 +148,16 @@
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ListBoxItem">
-                            <Border x:Name="Bd" Background="Transparent" CornerRadius="7,7,0,0" Padding="{TemplateBinding Padding}">
-                                <ContentPresenter VerticalAlignment="Center" />
-                            </Border>
+                            <Grid>
+                                <Border x:Name="Bd" Background="Transparent" CornerRadius="7,7,0,0" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter VerticalAlignment="Center" />
+                                </Border>
+                                <!-- 拖拽插入指示 -->
+                                <Border x:Name="DropLine" Width="3" HorizontalAlignment="Left" Margin="0,3,0,3"
+                                        Background="{StaticResource Accent}" CornerRadius="2" Visibility="Collapsed" />
+                                <Border x:Name="DropLineAfter" Width="3" HorizontalAlignment="Right" Margin="0,3,0,3"
+                                        Background="{StaticResource Accent}" CornerRadius="2" Visibility="Collapsed" />
+                            </Grid>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
                                     <Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}" />
@@ -160,6 +167,12 @@
                                     <Setter Property="Foreground" Value="{StaticResource Accent}" />
                                     <Setter Property="FontWeight" Value="SemiBold" />
                                 </Trigger>
+                                <DataTrigger Binding="{Binding IsDragTarget}" Value="True">
+                                    <Setter TargetName="DropLine" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsDragTargetAfter}" Value="True">
+                                    <Setter TargetName="DropLineAfter" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
                     </Setter.Value>
@@ -260,7 +273,14 @@
                              ItemContainerStyle="{StaticResource GroupTab}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Disabled"
-                             MouseDoubleClick="TabList_MouseDoubleClick">
+                             AllowDrop="True"
+                             MouseDoubleClick="TabList_MouseDoubleClick"
+                             PreviewMouseLeftButtonDown="TabList_PreviewMouseLeftButtonDown"
+                             PreviewMouseMove="TabList_PreviewMouseMove"
+                             PreviewMouseLeftButtonUp="TabList_PreviewMouseLeftButtonUp"
+                             DragOver="TabList_DragOver"
+                             DragLeave="TabList_DragLeave"
+                             Drop="TabList_Drop">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <StackPanel Orientation="Horizontal" />
@@ -283,9 +303,6 @@
                             <ContextMenu>
                                 <MenuItem Header="新建分组" Click="NewGroup_Click" />
                                 <MenuItem Header="重命名分组" Click="RenameGroup_Click" />
-                                <Separator Style="{StaticResource MenuSeparator}" />
-                                <MenuItem Header="左移" Click="MoveGroupLeft_Click" />
-                                <MenuItem Header="右移" Click="MoveGroupRight_Click" />
                                 <Separator Style="{StaticResource MenuSeparator}" />
                                 <MenuItem Header="删除分组" Click="DeleteGroup_Click" />
                             </ContextMenu>
@@ -432,7 +449,7 @@
                            VerticalAlignment="Center" Margin="10,0" TextTrimming="CharacterEllipsis" />
 
                 <TextBlock Grid.Column="4" VerticalAlignment="Center" FontSize="11" Foreground="#AAB2C0"
-                           Text="双击打开 · 拖拽排序 · 右键更多" />
+                           Text="拖动标签排序 · 双击打开 · 最小化到托盘 · 右键更多" />
             </Grid>
         </Grid>
     </Border>

@@ -48,7 +48,7 @@ Write-Host ("  runs   : {0}" -f ($times -join ', '))
 Write-Host ("  min={0} ms  median={1} ms  max={2} ms" -f $sorted[0], $sorted[[int]($sorted.Count / 2)], $sorted[-1])
 
 Write-Host ''
-Write-Host '######## 4. screenshots (rendered by the app itself) ########'
+Write-Host '######## 5. screenshots (rendered by the app itself) ########'
 $sandbox = Join-Path $env:TEMP 'sm-final-data'
 Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
@@ -67,7 +67,7 @@ $p = Start-Process -FilePath $exe -ArgumentList '--shot', (Join-Path $shotDir 'f
 Get-Content (Join-Path $dir 'shot.log') | ForEach-Object { "  $_" }
 Write-Host ("  exit = {0}" -f $p.ExitCode)
 
-# --- 4b. 有数据 ---
+# --- 5b. 有数据 ---
 Stop-App
 $g1 = Cn @(0x5E38, 0x7528)
 $g2 = Cn @(0x5DE5, 0x4F5C)
