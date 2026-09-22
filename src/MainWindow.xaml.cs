@@ -123,12 +123,36 @@ public partial class MainWindow : Window
                 TrayTestLog($"expect-to-tray(窗口隐藏+无任务栏按钮+托盘图标存在)={toTray}");
                 ok &= toTray;
 
-                // 2) 从托盘恢复
-                RestoreFromTray();
+                // 2) 恢复：走真实的托盘点击处理链
+                //    2a. 右键应弹菜单、不动窗口（回归：别把右键也接成唤出）
+                Tray.SimulateClick(System.Windows.Forms.MouseButtons.Right);
+                await Task.Delay(250);
+                var rightNoop = !IsVisible && !ShowInTaskbar;
+                TrayTestLog($"expect-rightclick-noop(右键不恢复窗口)={rightNoop}");
+                ok &= rightNoop;
+
+                //    2b. 等一会儿再单击左键：这段时间留给外部脚本把前台抢走，
+                //        这样才复现得出“别的程序正占着前台”的真实场景
+                TrayTestLog($"wait-for-focus-steal(3000ms)：外部脚本可在此时激活别的窗口");
+                await Task.Delay(3000);
+                // 确认“前台确实被别的程序占着”这个前提是否成立（不成立就说明这条断言是宽松的）
+                TrayTestLog($"before-restore: 前台进程={App.ForegroundOwnerName()}");
+
+                Tray.SimulateClick(System.Windows.Forms.MouseButtons.Left);
                 await Task.Delay(500);
+                var hwnd = App.HandleOf(this);
                 var back = IsVisible && ShowInTaskbar && WindowState == WindowState.Normal;
                 TrayTestLog($"expect-restored(窗口可见+任务栏按钮+Normal)={back}");
                 ok &= back;
+
+                // 2c. Win32 层的真实状态：这两条才是用户看到的东西
+                var notIconic = !App.IsMinimizedHwnd(this);
+                TrayTestLog($"expect-not-minimized(Win32 IsIconic=false)={notIconic}");
+                ok &= notIconic;
+
+                var isForeground = App.IsForeground(this);
+                TrayTestLog($"expect-foreground(Win32 前台=本窗口)={isForeground}");
+                ok &= isForeground;
 
                 // 3) 关闭 = 真退出：Close() 后进程结束，结论用退出码表达
                 TrayTestLog($"result={(ok ? "PASS" : "FAIL")}");
@@ -259,17 +283,27 @@ public partial class MainWindow : Window
                     $"state={WindowState} tray={_tray?.IsVisible == true}");
     }
 
-    /// <summary>从托盘恢复窗口（重复启动 exe、双击托盘图标、点菜单“显示主窗口”都会走这里）。</summary>
+    /// <summary>
+    /// 从托盘恢复窗口（单击托盘图标、重复启动 exe、点菜单“显示主窗口”都会走这里）。
+    /// <para>
+    /// 顺序很关键，**不能**在隐藏状态下先改 WindowState：那样只改了 WPF 的属性，
+    /// Win32 窗口的显示状态没变，随后 Show() 会让它以“最小化”的样子出现
+    /// （表现为点了托盘没反应、还得自己点任务栏按钮）。
+    /// 所以先 Show() 出来，再置 Normal，最后交给 ForceForeground 兜底。
+    /// </para>
+    /// </summary>
     public void RestoreFromTray()
     {
         if (_exiting) return;
 
         _inTray = false;
         ShowInTaskbar = true;
-        WindowState = WindowState.Normal;   // 窗口此时是隐藏的，改状态不会闪一下
         Show();
-        Activate();
-        TrayTestLog($"restored: visible={IsVisible} inTaskbar={ShowInTaskbar} state={WindowState}");
+        if (WindowState != WindowState.Normal) WindowState = WindowState.Normal;
+        App.ForceForeground(this);
+
+        TrayTestLog($"restored: visible={IsVisible} inTaskbar={ShowInTaskbar} state={WindowState} " +
+                    $"active={IsActive} iconic={App.IsMinimizedHwnd(this)} foreground={App.IsForeground(this)}");
     }
 
     private void ExitFromTray()

@@ -109,18 +109,24 @@ public partial class App : Application
     /// 尽力把窗口切到前台并还原。
     /// Windows 有前台锁（foreground lock），刚启动的进程光调 Activate() 不一定生效，
     /// 这里补一个 AttachThreadInput 的常规做法。
+    /// （窗口从托盘恢复时也走这里，所以是 internal。）
     /// </summary>
-    private static void ForceForeground(Window window)
+    internal static void ForceForeground(Window window)
     {
         try
         {
             if (window.WindowState == WindowState.Minimized)
                 window.WindowState = WindowState.Normal;
 
-            window.Activate();
             var hwnd = new WindowInteropHelper(window).Handle;
             if (hwnd == IntPtr.Zero) return;
 
+            // 先把 Win32 层的“最小化”真的解掉，再谈抢前台。
+            // 少了这一步会出现：WPF 属性是 Normal，但窗口真身仍是最小化，
+            // 于是“已经在前台”却看不见（用户还得自己点任务栏）。
+            if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+
+            window.Activate();
             var foreground = GetForegroundWindow();
             if (foreground == hwnd) return;
 
@@ -147,6 +153,9 @@ public partial class App : Application
         catch { /* 抢不到焦点也不影响使用 */ }
     }
 
+    private const int SW_RESTORE = 9;
+
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr hWnd);
@@ -154,12 +163,50 @@ public partial class App : Application
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
 
+    // ---- 以下三个只给自动化验证（--traytest）用：报告 Win32 层的真实状态 ----
+
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
+
+    /// <summary>窗口句柄（用于在测试里查 Win32 状态）。</summary>
+    internal static IntPtr HandleOf(Window window) => new WindowInteropHelper(window).Handle;
+
+    /// <summary>Win32 层是否真的处于最小化（WPF 的 WindowState 可能和它对不上）。</summary>
+    internal static bool IsMinimizedHwnd(Window window)
+    {
+        var hwnd = HandleOf(window);
+        return hwnd != IntPtr.Zero && IsIconic(hwnd);
+    }
+
+    /// <summary>是否真的拿到了前台（不是只在任务栏闪一下）。</summary>
+    internal static bool IsForeground(Window window)
+    {
+        var hwnd = HandleOf(window);
+        return hwnd != IntPtr.Zero && GetForegroundWindow() == hwnd;
+    }
+
+    /// <summary>
+    /// 当前前台窗口属于哪个进程（只给测试日志用）。
+    /// 用来确认测试里“别的程序正占着前台”这个前提是否真的成立。
+    /// </summary>
+    internal static string ForegroundOwnerName()
+    {
+        try
+        {
+            var hwnd = GetForegroundWindow();
+            if (hwnd == IntPtr.Zero) return "(none)";
+            GetWindowThreadProcessId(hwnd, out var pid);
+            if (pid == 0) return "(unknown)";
+            using var p = System.Diagnostics.Process.GetProcessById((int)pid);
+            return p.ProcessName;
+        }
+        catch { return "(error)"; }
+    }
+
     /// <summary>把窗口还原到前台（重复启动 exe、或从托盘/最小化恢复时用）。</summary>
     public void BringToFront()
     {
-        if (_window is null) return;
-        _window.RestoreFromTray();   // 可能正藏在托盘里
-        ForceForeground(_window);
+        // RestoreFromTray 内部已经会把窗口置前，这里不再重复调 ForceForeground
+        _window?.RestoreFromTray();   // 可能正藏在托盘里
     }
 
     // ==================================================================

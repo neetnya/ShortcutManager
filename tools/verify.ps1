@@ -48,6 +48,17 @@ Write-Host ("  runs   : {0}" -f ($times -join ', '))
 Write-Host ("  min={0} ms  median={1} ms  max={2} ms" -f $sorted[0], $sorted[[int]($sorted.Count / 2)], $sorted[-1])
 
 Write-Host ''
+Write-Host '######## 4. tray behavior (--traytest) ########'
+# 最小化->托盘->右键不恢复->单击左键恢复->关闭。
+# 断言里有关键的 Win32 层检查（IsIconic / 前台窗口）：只看 WPF 属性会假绿
+# ——曾经 WPF 报 state=Normal 而窗口真身还是最小化的。
+Stop-App
+Remove-Item (Join-Path $dir 'tray-test.log') -Force -ErrorAction SilentlyContinue
+$p = Start-Process -FilePath $exe -ArgumentList '--traytest' -PassThru -Wait
+Get-Content (Join-Path $dir 'tray-test.log') -Encoding UTF8 | ForEach-Object { "  $_" }
+Write-Host ("  exit = {0}" -f $p.ExitCode)
+
+Write-Host ''
 Write-Host '######## 5. screenshots (rendered by the app itself) ########'
 $sandbox = Join-Path $env:TEMP 'sm-final-data'
 Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue
@@ -59,7 +70,7 @@ foreach ($n in 'readme.txt', 'notes.md', 'report.docx', 'data.xlsx', 'photo.png'
     Set-Content -Path (Join-Path $sandbox $n) -Value 'x' -Encoding UTF8
 }
 
-# --- 4a. 首次运行（无配置），验证居中 ---
+# --- 5a. 首次运行（无配置），验证居中 ---
 Stop-App
 Remove-Item $cfg -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $dir 'shot.log') -Force -ErrorAction SilentlyContinue

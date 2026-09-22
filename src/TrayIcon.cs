@@ -63,11 +63,8 @@ internal sealed class TrayIcon : IDisposable
                 ContextMenuStrip = _menu,
                 Visible = true,
             };
-            _icon.DoubleClick += (_, _) => Activated?.Invoke();
-            _icon.MouseClick += (_, e) =>
-            {
-                if (e.Button == MouseButtons.Middle) Activated?.Invoke();
-            };
+            // 单击左键即唤出（不注册 DoubleClick：那样双击会连着触发两次）
+            _icon.MouseClick += OnMouseClick;
         }
         catch
         {
@@ -75,6 +72,23 @@ internal sealed class TrayIcon : IDisposable
             _icon = null;
         }
     }
+
+    /// <summary>
+    /// 托盘鼠标点击的唯一入口。只有左键（以及习惯性的中键）唤出窗口；
+    /// 右键留给 ContextMenuStrip 弹菜单，不做任何窗口操作。
+    /// </summary>
+    private void OnMouseClick(object? sender, MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left || e.Button == MouseButtons.Middle)
+            Activated?.Invoke();
+    }
+
+    /// <summary>
+    /// 仅供自动化验证（`--traytest`）：用与真实点击**完全相同**的处理链模拟一次托盘点击，
+    /// 因此也能覆盖“右键不该恢复窗口”这条规则。
+    /// </summary>
+    internal void SimulateClick(MouseButtons button)
+        => OnMouseClick(this, new MouseEventArgs(button, clicks: 1, x: 0, y: 0, delta: 0));
 
     /// <summary>取 exe 里嵌的图标（csproj 的 ApplicationIcon）；失败退回系统默认图标。</summary>
     private static Icon LoadAppIcon()

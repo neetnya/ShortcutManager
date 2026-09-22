@@ -64,7 +64,8 @@
 
 - 最小化（点标题栏 `—` / `Esc` / `Ctrl+W`）→ 窗口与任务栏按钮一起消失，
   托盘出现本程序图标，程序继续后台运行（数据早已落盘，不占用 CPU）
-- 恢复 → **双击托盘图标**，或托盘右键 → 显示主窗口；窗口收在托盘里时**再双击一次 exe** 也会把它唤到前台（不会开第二个进程）
+- 恢复 → **单击托盘图标**（窗口直接出现在前台，不会被别的窗口盖住），或托盘右键 → 显示主窗口；
+  窗口收在托盘里时**再双击一次 exe** 也会把它唤到前台（不会开第二个进程）
 - 退出 → 点窗口右上角 `✕`、按 `Ctrl+Q`，或托盘右键 → 退出。退出时会保存配置并摘掉托盘图标
 
 托盘图标在第一次最小化时创建，之后一直保留到程序退出。
@@ -173,7 +174,7 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1    # 生成 dist\Shor
 | `--shot <路径>` | 启动后渲染自身并保存 PNG，然后退出（用 `RenderTargetBitmap`，不受 DPI 影响） |
 | `--icon <路径>` | 图标提取诊断（不启动界面），逐步结果写入 `icon-diag.log` |
 | `--import <路径>` | 启动后直接把该路径导入当前分组 |
-| `--traytest` | 自动走一遍「最小化 → 托盘 → 恢复 → 关闭」，结果写入 `tray-test.log`，退出码 0 = 全通过 |
+| `--traytest` | 自动走一遍「最小化 → 托盘 → 右键不恢复 → 单击左键恢复 → 关闭」，结果写入 `tray-test.log`，退出码 0 = 全通过。断言不止看 WPF 属性，还会查 **Win32 层**的 `IsIconic` 与前台窗口归属 |
 
 ## 实现备注
 
@@ -201,6 +202,14 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1    # 生成 dist\Shor
 - **托盘**用 `System.Drawing` + WinForms 的 `NotifyIcon`（`UseWindowsForms` 已开启，
   但代码里不引入任何 WinForms 窗体，也不会启动第二个消息循环）。
   最小化时 `ShowInTaskbar = false` + `Hide()`：窗口和任务栏按钮一起消失，程序仍在运行；
+  **单击左键**即唤出（不注册 `DoubleClick`，否则双击会连着触发两次），
+  恢复时走 `App.ForceForeground`（先 `ShowWindow(SW_RESTORE)` 解掉 Win32 层的最小化，
+  再 `AttachThreadInput` + `SetForegroundWindow`），所以窗口会真的还原并直接落在最前面，
+  而不是只在任务栏闪一下。
+  **注意恢复的顺序**：必须 `Show()` 之后再设 `WindowState = Normal`。
+  窗口处于隐藏状态时改 `WindowState` 只改了 WPF 的属性、传不到 Win32 窗口，
+  之后 `Show()` 会把它按**最小化**的样子显示出来
+  （症状：点托盘像没反应，还得自己点一下任务栏按钮）。
   关闭仍然走 `Close()`，由 `ShutdownMode.OnMainWindowClose` 结束进程，
   退出前先 `Visible = false` 再 `Dispose()`，避免托盘里留下点一下才消失的幽灵图标。
 - **重命名冲突**：如果新名字等于默认名，会把覆盖名清空而不是存一份冗余副本，

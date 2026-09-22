@@ -4,8 +4,8 @@
         xmlns:vm="clr-namespace:ShortcutManager.ViewModels"
         xmlns:local="clr-namespace:ShortcutManager"
         Title="快捷方式管理器"
-        Height="580" Width="760"
-        MinHeight="380" MinWidth="540"
+        Height="580" Width="600"
+        MinHeight="380" MinWidth="520"
         WindowStartupLocation="CenterScreen"
         ShowInTaskbar="True"
         AllowDrop="True"
@@ -448,8 +448,10 @@
                 <TextBlock Grid.Column="3" Text="{Binding StatusText}" Foreground="{StaticResource Muted}" FontSize="12"
                            VerticalAlignment="Center" Margin="10,0" TextTrimming="CharacterEllipsis" />
 
+                <!-- 窗口收窄到 600：这条提示要短，否则会把中间的状态文字挤没 -->
                 <TextBlock Grid.Column="4" VerticalAlignment="Center" FontSize="11" Foreground="#AAB2C0"
-                           Text="拖动标签排序 · 双击打开 · 最小化到托盘 · 右键更多" />
+                           Text="拖拽排序 · 右键更多"
+                           ToolTip="分组标签和磁贴都可以拖拽排序；更多操作在右键菜单里" />
             </Grid>
         </Grid>
     </Border>
