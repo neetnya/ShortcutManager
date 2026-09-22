@@ -168,14 +168,28 @@ public sealed class MainViewModel : ObservableObject
         return created.Count;
     }
 
-    public void RemoveItem(ShortcutViewModel item)
+    public void RemoveItem(ShortcutViewModel item) => RemoveItems(new[] { item });
+
+    /// <summary>
+    /// 批量移除条目（多选删除用）：只从列表里删掉，磁盘文件不动。
+    /// 返回真正移除的数量；一次写盘，不是每项写一次。
+    /// </summary>
+    public int RemoveItems(IEnumerable<ShortcutViewModel> items)
     {
-        var group = item.Owner;
-        group.Model.Items.Remove(item.Model);
-        group.Items.Remove(item);
-        group.NotifyCountChanged();
-        if (ReferenceEquals(SelectedItem, item)) SelectedItem = null;
-        Save();
+        var removed = 0;
+        foreach (var item in items.Distinct().ToList())
+        {
+            var group = item.Owner;
+            if (!group.Items.Remove(item)) continue;
+
+            group.Model.Items.Remove(item.Model);
+            group.NotifyCountChanged();
+            if (ReferenceEquals(SelectedItem, item)) SelectedItem = null;
+            removed++;
+        }
+
+        if (removed > 0) Save();
+        return removed;
     }
 
     /// <summary>把条目移动到其他分组（追加到末尾）。</summary>
@@ -275,6 +289,10 @@ public sealed class MainViewModel : ObservableObject
 
     public void Save()
     {
+        // 自动化验证（--uitest）会在界面里真的增删分组/条目，置位后一律不落盘，
+        // 这样跑测试不会污染用户的 config.json
+        if (SuppressSave) return;
+
         LastSaveError = string.Empty;
         try
         {
@@ -304,6 +322,9 @@ public sealed class MainViewModel : ObservableObject
     }
 
     private bool _warnedFallback;
+
+    /// <summary>调试用：置为 true 后 <see cref="Save"/> 直接返回（--uitest 用，避免测试数据写进真实配置）。</summary>
+    public bool SuppressSave { get; set; }
 
     /// <summary>调试用：最近一次保存的错误（无错误为空）。</summary>
     public string LastSaveError { get; private set; } = string.Empty;

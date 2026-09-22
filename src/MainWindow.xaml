@@ -139,6 +139,39 @@
                 </Setter>
             </Style>
 
+            <!-- ===== 标签栏翻页箭头（替代原生横向滚动条）===== -->
+            <Style x:Key="TabArrow" TargetType="RepeatButton">
+                <Setter Property="Width" Value="22" />
+                <Setter Property="Height" Value="22" />
+                <Setter Property="Margin" Value="1,0" />
+                <Setter Property="Foreground" Value="#8A93A6" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="Delay" Value="350" />
+                <Setter Property="Interval" Value="70" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="RepeatButton">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}" />
+                                    <Setter Property="Foreground" Value="{StaticResource Accent}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Pressed}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.3" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!-- ===== 分组 tab ===== -->
             <Style x:Key="GroupTab" TargetType="ListBoxItem">
                 <Setter Property="Padding" Value="12,6" />
@@ -264,8 +297,14 @@
 
             <!-- ============ 顶部：分组 tab ============ -->
             <Grid Grid.Row="0" Background="#F4F6FA" Margin="8,6,8,0">
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
-                              x:Name="TabScroll">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 原生横向滚动条太丑：隐藏它，改用右侧的两个三角箭头翻页 -->
+                <ScrollViewer x:Name="TabScroll" Grid.Column="0"
+                              HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
                     <ListBox x:Name="TabList"
                              ItemsSource="{Binding Groups}"
                              SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
@@ -310,6 +349,20 @@
                     </ListBox>
                 </ScrollViewer>
 
+                <!-- 分组多到一屏放不下时才出现；能继续滚的方向才可点 -->
+                <StackPanel x:Name="TabArrows" Grid.Column="1" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="4,0,0,0" Visibility="Collapsed">
+                    <RepeatButton x:Name="TabLeftButton" Style="{StaticResource TabArrow}"
+                                  Click="TabLeft_Click" ToolTip="往前翻分组">
+                        <Path Data="M 6,0 L 0,5 L 6,10 Z"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RepeatButton}}" />
+                    </RepeatButton>
+                    <RepeatButton x:Name="TabRightButton" Style="{StaticResource TabArrow}"
+                                  Click="TabRight_Click" ToolTip="往后翻分组">
+                        <Path Data="M 0,0 L 6,5 L 0,10 Z"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RepeatButton}}" />
+                    </RepeatButton>
+                </StackPanel>
             </Grid>
 
             <!-- ============ 中间：3 列网格 ============ -->
@@ -321,13 +374,14 @@
                              SelectedItem="{Binding SelectedItem, Mode=TwoWay}"
                              Background="Transparent" BorderThickness="0" Padding="8"
                              ItemContainerStyle="{StaticResource Tile}"
-                             SelectionMode="Single"
+                             SelectionMode="Extended"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                              ScrollViewer.CanContentScroll="False"
                              MouseDoubleClick="TileList_MouseDoubleClick"
                              KeyDown="TileList_KeyDown"
                              PreviewMouseLeftButtonDown="TileList_PreviewMouseLeftButtonDown"
+                             PreviewMouseRightButtonDown="TileList_PreviewMouseRightButtonDown"
                              PreviewMouseMove="TileList_PreviewMouseMove"
                              PreviewMouseLeftButtonUp="TileList_PreviewMouseLeftButtonUp"
                              DragOver="TileList_DragOver"
@@ -397,16 +451,16 @@
 
                         <ListBox.ContextMenu>
                             <ContextMenu x:Name="TileMenu" Opened="TileMenu_Opened">
-                                <MenuItem Header="打开" Click="Open_Click" />
-                                <MenuItem Header="在资源管理器中显示" Click="Reveal_Click" />
+                                <MenuItem x:Name="OpenMenu" Header="打开" Click="Open_Click" />
+                                <MenuItem x:Name="RevealMenu" Header="在资源管理器中显示" Click="Reveal_Click" />
                                 <Separator Style="{StaticResource MenuSeparator}" />
-                                <MenuItem Header="重命名" Click="Rename_Click" />
-                                <MenuItem Header="编辑路径" Click="EditPath_Click" />
+                                <MenuItem x:Name="RenameMenu" Header="重命名" Click="Rename_Click" />
+                                <MenuItem x:Name="EditPathMenu" Header="编辑路径" Click="EditPath_Click" />
                                 <MenuItem x:Name="SendToMenu" Header="发送到其他分组" />
-                                <MenuItem Header="移除" Click="Remove_Click" />
+                                <MenuItem x:Name="RemoveMenu" Header="移除" Click="Remove_Click" />
                                 <Separator Style="{StaticResource MenuSeparator}" />
-                                <MenuItem Header="打开所在目录" Click="OpenParent_Click" />
-                                <MenuItem Header="复制路径" Click="CopyPath_Click" />
+                                <MenuItem x:Name="OpenParentMenu" Header="打开所在目录" Click="OpenParent_Click" />
+                                <MenuItem x:Name="CopyPathMenu" Header="复制路径" Click="CopyPath_Click" />
                             </ContextMenu>
                         </ListBox.ContextMenu>
                     </ListBox>
@@ -450,8 +504,8 @@
 
                 <!-- 窗口收窄到 600：这条提示要短，否则会把中间的状态文字挤没 -->
                 <TextBlock Grid.Column="4" VerticalAlignment="Center" FontSize="11" Foreground="#AAB2C0"
-                           Text="拖拽排序 · 右键更多"
-                           ToolTip="分组标签和磁贴都可以拖拽排序；更多操作在右键菜单里" />
+                           Text="Ctrl 多选 · 右键更多"
+                           ToolTip="分组标签和磁贴都可以拖拽排序；按住 Ctrl / Shift 点磁贴可多选，按 Delete 或右键 → 移除可一次删掉多个（不会删除磁盘文件）" />
             </Grid>
         </Grid>
     </Border>

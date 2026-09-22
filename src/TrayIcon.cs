@@ -5,7 +5,7 @@ namespace ShortcutManager;
 
 /// <summary>
 /// 托盘图标的最小封装（只借用 WinForms 的 NotifyIcon，不引入任何 WinForms 窗体）。
-/// 双击 = 唤出主窗口；右键菜单 = 显示主窗口 / 退出。
+/// 单击（左键/中键）= 唤出主窗口；右键菜单 = 显示主窗口 / 退出。
 /// </summary>
 internal sealed class TrayIcon : IDisposable
 {
@@ -13,7 +13,7 @@ internal sealed class TrayIcon : IDisposable
     private ContextMenuStrip? _menu;
     private bool _disposed;
 
-    /// <summary>双击托盘图标（或点菜单“显示主窗口”）时触发。</summary>
+    /// <summary>单击托盘图标（或点菜单“显示主窗口”）时触发。</summary>
     public event Action? Activated;
 
     /// <summary>点菜单“退出”时触发。</summary>

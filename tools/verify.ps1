@@ -59,7 +59,16 @@ Get-Content (Join-Path $dir 'tray-test.log') -Encoding UTF8 | ForEach-Object { "
 Write-Host ("  exit = {0}" -f $p.ExitCode)
 
 Write-Host ''
-Write-Host '######## 5. screenshots (rendered by the app itself) ########'
+Write-Host '######## 5. window UI behavior (--uitest) ########'
+# 最大化已禁用 / 标签栏翻页箭头的显隐与边界 / Ctrl+Shift 多选批量删除
+Stop-App
+Remove-Item (Join-Path $dir 'ui-test.log') -Force -ErrorAction SilentlyContinue
+$p = Start-Process -FilePath $exe -ArgumentList '--uitest' -PassThru -Wait
+Get-Content (Join-Path $dir 'ui-test.log') -Encoding UTF8 | ForEach-Object { "  $_" }
+Write-Host ("  exit = {0}" -f $p.ExitCode)
+
+Write-Host ''
+Write-Host '######## 6. screenshots (rendered by the app itself) ########'
 $sandbox = Join-Path $env:TEMP 'sm-final-data'
 Remove-Item $sandbox -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $sandbox | Out-Null
@@ -70,7 +79,7 @@ foreach ($n in 'readme.txt', 'notes.md', 'report.docx', 'data.xlsx', 'photo.png'
     Set-Content -Path (Join-Path $sandbox $n) -Value 'x' -Encoding UTF8
 }
 
-# --- 5a. 首次运行（无配置），验证居中 ---
+# --- 6a. 首次运行（无配置），验证居中 ---
 Stop-App
 Remove-Item $cfg -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $dir 'shot.log') -Force -ErrorAction SilentlyContinue
@@ -78,7 +87,7 @@ $p = Start-Process -FilePath $exe -ArgumentList '--shot', (Join-Path $shotDir 'f
 Get-Content (Join-Path $dir 'shot.log') | ForEach-Object { "  $_" }
 Write-Host ("  exit = {0}" -f $p.ExitCode)
 
-# --- 5b. 有数据 ---
+# --- 6b. 有数据 ---
 Stop-App
 $g1 = Cn @(0x5E38, 0x7528)
 $g2 = Cn @(0x5DE5, 0x4F5C)
@@ -107,6 +116,17 @@ $groups = @(
 [System.IO.File]::WriteAllText($cfg, (ConvertTo-Json $groups -Depth 6), [System.Text.UTF8Encoding]::new($false))
 Remove-Item (Join-Path $dir 'shot.log') -Force -ErrorAction SilentlyContinue
 $p = Start-Process -FilePath $exe -ArgumentList '--shot', (Join-Path $shotDir 'final-02-full.png') -PassThru -Wait
+Get-Content (Join-Path $dir 'shot.log') | ForEach-Object { "  $_" }
+Write-Host ("  exit = {0}" -f $p.ExitCode)
+
+# --- 6c. 分组很多：标签栏应出现右侧翻页箭头 ---
+Stop-App
+$many = @()
+foreach ($i in 1..8) { $many += @{ Id = "m$i"; Name = "$g2$i"; Items = @() } }
+$many[0] = @{ Id = 'm1'; Name = $g1; Items = $items }
+[System.IO.File]::WriteAllText($cfg, (ConvertTo-Json $many -Depth 6), [System.Text.UTF8Encoding]::new($false))
+Remove-Item (Join-Path $dir 'shot.log') -Force -ErrorAction SilentlyContinue
+$p = Start-Process -FilePath $exe -ArgumentList '--shot', (Join-Path $shotDir 'final-03-manytabs.png') -PassThru -Wait
 Get-Content (Join-Path $dir 'shot.log') | ForEach-Object { "  $_" }
 Write-Host ("  exit = {0}" -f $p.ExitCode)
 

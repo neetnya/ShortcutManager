@@ -183,6 +183,16 @@ internal static class LogicTests
         Check("模型移除", g1.Model.Items.Any(i => i.Path == remPath), false);
         Check("磁盘文件未被删除", File.Exists(remPath) || Directory.Exists(remPath), true);
 
+        // 多选批量移除（界面 Ctrl/Shift 多选后删除走的就是这条路径）
+        var batchBefore = g1.Items.Count;
+        var batch = g1.Items.Take(2).ToList();
+        var batchPaths = batch.Select(i => i.Path).ToList();
+        Check("批量移除数量", vm.RemoveItems(batch), 2);
+        Check("批量移除后条目数", g1.Items.Count, batchBefore - 2);
+        Check("批量移除后模型同步", g1.Model.Items.Any(i => batchPaths.Contains(i.Path)), false);
+        Check("批量移除不动磁盘文件", batchPaths.All(p => File.Exists(p) || Directory.Exists(p)), true);
+        Check("重复批量移除返回 0", vm.RemoveItems(batch), 0);
+
         // 程序目录内的文件导入后存为相对路径
         Section("相对路径导入");
         var relImport = vm.Import(new[] { localFile }, g1);

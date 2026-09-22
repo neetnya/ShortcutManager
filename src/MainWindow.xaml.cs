@@ -37,7 +37,7 @@ public partial class MainWindow : Window
 
         CommandBindings.Add(new CommandBinding(MinimizeCommand, (_, _) => WindowState = WindowState.Minimized));
         CommandBindings.Add(new CommandBinding(NewGroupCommand, (_, _) => CreateGroup()));
-        CommandBindings.Add(new CommandBinding(DeleteCommand, (_, _) => RemoveSelectedItem()));
+        CommandBindings.Add(new CommandBinding(DeleteCommand, (_, _) => RemoveSelectedItems()));
         CommandBinding renameBinding = new(RenameCommand, (_, _) =>
         {
             if (ViewModel.SelectedItem is { } item) BeginItemRename(item);
@@ -52,6 +52,12 @@ public partial class MainWindow : Window
         AllowDrop = true;
         Drop += Window_Drop;
         DragOver += Window_DragOver;
+
+        // 标签栏翻页箭头的显隐/可用状态跟着布局与滚动走
+        TabScroll.ScrollChanged += (_, _) => UpdateTabArrows();
+        TabScroll.SizeChanged += (_, _) => UpdateTabArrows();
+        TabList.LayoutUpdated += (_, _) => UpdateTabArrows();
+        TabList.SelectionChanged += TabList_SelectionChanged;
 
         // 调试定位用：--import <路径> 启动时直接把路径导入当前分组
         var args = Environment.GetCommandLineArgs();
@@ -83,9 +89,110 @@ public partial class MainWindow : Window
                 $"TransformToDevice={m}",
                 $"TileList.ActualWidth={TileList.ActualWidth} TileList.ActualHeight={TileList.ActualHeight}",
                 $"TabList.ActualWidth={TabList.ActualWidth}",
+                $"TabScroll.ScrollableWidth={TabScroll.ScrollableWidth:0.0} TabArrows={TabArrows.Visibility}",
+                $"maximizeBox={WindowEffects.HasMaximizeBox(this)}",
                 $"Groups={ViewModel.Groups.Count} Items={ViewModel.SelectedItems?.Count}",
             };
             TryWriteLog("diag.log", lines);
+        }
+
+        // ---- 界面行为验证：最大化已禁用 / 标签栏箭头 / 多选删除，结果写入 ui-test.log ----
+        if (args.Any(a => a == "--uitest"))
+        {
+            _uiLog = new List<string>();
+            ViewModel.SuppressSave = true;   // 测试会真的增删分组和条目，别写进真实配置
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(async () =>
+            {
+                await Task.Delay(700);
+                var ok = true;
+                string Pct(double v) => v.ToString("0.0");
+
+                // 1) 最大化按钮已从窗口样式里去掉
+                var noBox = !WindowEffects.HasMaximizeBox(this);
+                UiTestLog($"expect-no-maximizebox(WS_MAXIMIZEBOX 已移除)={noBox}");
+                ok &= noBox;
+
+                // 2) 直接要求最大化 → 应被拒绝并还原
+                WindowState = WindowState.Maximized;
+                await Task.Delay(300);
+                var rejected = WindowState != WindowState.Maximized;
+                UiTestLog($"expect-maximize-rejected(设 Maximized 后被拉回)={rejected} state={WindowState}");
+                ok &= rejected;
+                if (WindowState != WindowState.Normal) WindowState = WindowState.Normal;
+                await Task.Delay(250);
+
+                // 3) 分组少 → 不显示翻页箭头
+                while (ViewModel.Groups.Count > 2) ViewModel.RemoveGroup(ViewModel.Groups[^1]);
+                await Task.Delay(300);
+                UpdateTabArrows();
+                var few = TabArrows.Visibility == Visibility.Collapsed && TabScroll.ScrollableWidth <= 0.5;
+                UiTestLog($"few-groups: groups={ViewModel.Groups.Count} scrollable={Pct(TabScroll.ScrollableWidth)} " +
+                          $"arrows={TabArrows.Visibility} => 不显示={few}");
+                ok &= few;
+
+                // 4) 分组多到放不下 → 出现箭头；回到第一个标签时只有“向右”可点
+                while (ViewModel.Groups.Count < 14) ViewModel.AddGroup();
+                ViewModel.SelectedGroup = ViewModel.Groups[0];   // 选中态会把标签滚进视野，这里先把偏移归零
+                await Task.Delay(500);
+                ScrollTabs(-9999);
+                UpdateTabArrows();
+                var many = TabArrows.Visibility == Visibility.Visible
+                           && TabScroll.ScrollableWidth > 0.5
+                           && !TabLeftButton.IsEnabled && TabRightButton.IsEnabled;
+                UiTestLog($"many-groups: groups={ViewModel.Groups.Count} scrollable={Pct(TabScroll.ScrollableWidth)} " +
+                          $"offset={Pct(TabScroll.HorizontalOffset)} arrows={TabArrows.Visibility} " +
+                          $"left={TabLeftButton.IsEnabled} right={TabRightButton.IsEnabled} => 显示且方向可用={many}");
+                ok &= many;
+
+                // 5) 点箭头能滚；滚到最右后右箭头禁用、左箭头可用
+                TabRightButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                await Task.Delay(250);
+                var scrolled = TabScroll.HorizontalOffset > 0.5;
+                UiTestLog($"expect-arrow-scrolls(点右箭头后偏移变大)={scrolled} offset={Pct(TabScroll.HorizontalOffset)}");
+                ok &= scrolled;
+
+                ScrollTabs(9999);
+                await Task.Delay(250);
+                UpdateTabArrows();
+                var atEnd = TabScroll.HorizontalOffset >= TabScroll.ScrollableWidth - 0.5
+                            && !TabRightButton.IsEnabled && TabLeftButton.IsEnabled;
+                UiTestLog($"expect-arrow-bounds(到底后右禁用/左可用)={atEnd} offset={Pct(TabScroll.HorizontalOffset)}");
+                ok &= atEnd;
+
+                // 6) 多选（Ctrl/Shift）→ 一次性移除，磁盘文件不动
+                var tmp = Path.Combine(Path.GetTempPath(), "sm-uitest");
+                Directory.CreateDirectory(tmp);
+                var files = new List<string>();
+                for (var i = 0; i < 3; i++)
+                {
+                    var f = Path.Combine(tmp, $"t{i}.txt");
+                    File.WriteAllText(f, "x");
+                    files.Add(f);
+                }
+                ViewModel.Import(files);
+                await Task.Delay(250);
+
+                var group = ViewModel.SelectedGroup!;
+                var before = group.Items.Count;
+                TileList.SelectedItems.Clear();
+                foreach (var it in group.Items.Skip(Math.Max(0, before - 3))) TileList.SelectedItems.Add(it);
+                var selected = SelectedTiles().Count;
+                RemoveSelectedItems();
+                await Task.Delay(250);
+                var removed = before - group.Items.Count;
+
+                var multi = TileList.SelectionMode == SelectionMode.Extended && selected == 3 && removed == 3;
+                UiTestLog($"expect-multi-delete(mode={TileList.SelectionMode} 选中{selected} 移除{removed})={multi}");
+                ok &= multi;
+                UiTestLog($"keep-files(磁盘文件未被删除)={files.All(File.Exists)}");
+                ok &= files.All(File.Exists);
+
+                try { Directory.Delete(tmp, true); } catch { /* ignore */ }
+
+                UiTestLog($"result={(ok ? "PASS" : "FAIL")}");
+                Environment.ExitCode = ok ? 0 : 1;
+                Close();   // SuppressSave 仍为 true：关闭时不会把测试数据写回配置
+            }));
         }
 
         var shotIndex = Array.FindIndex(args, a => a == "--shot");
@@ -218,6 +325,7 @@ public partial class MainWindow : Window
     {
         base.OnSourceInitialized(e);
         WindowEffects.ApplyAcrylic(this);
+        WindowEffects.DisableMaximize(this);
     }
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -278,7 +386,7 @@ public partial class MainWindow : Window
         Tray.Show();                // 第一次最小化时才创建托盘图标
         ShowInTaskbar = false;
         Hide();
-        ViewModel.StatusText = "已最小化到托盘，双击托盘图标即可恢复";
+        ViewModel.StatusText = "已最小化到托盘，单击托盘图标即可恢复";
         TrayTestLog($"minimized: visible={IsVisible} inTaskbar={ShowInTaskbar} " +
                     $"state={WindowState} tray={_tray?.IsVisible == true}");
     }
@@ -322,6 +430,16 @@ public partial class MainWindow : Window
         TryWriteLog("tray-test.log", _trayLog.ToArray());
     }
 
+    /// <summary>开发验证用：--uitest 把界面行为断言写入 ui-test.log。</summary>
+    private List<string>? _uiLog;
+
+    private void UiTestLog(string line)
+    {
+        if (_uiLog is null) return;
+        _uiLog.Add(line);
+        TryWriteLog("ui-test.log", _uiLog.ToArray());
+    }
+
     // ==================================================================
     //  分组 tab
     // ==================================================================
@@ -335,6 +453,7 @@ public partial class MainWindow : Window
         {
             if (ViewModel.SelectedGroup is { } g)
             {
+                BringGroupIntoView(g);   // 分组多了以后，新标签可能在可视区外
                 BeginGroupRename(g);
                 ViewModel.StatusText = "已新建分组";
             }
@@ -357,6 +476,72 @@ public partial class MainWindow : Window
     private void RenameGroup_Click(object sender, RoutedEventArgs e)
     {
         if (ViewModel.SelectedGroup is { } group) BeginGroupRename(group);
+    }
+
+    // ---- 标签栏翻页箭头（原生横向滚动条太丑，换成最右的两个三角）----
+
+    private const double TabScrollStep = 120;
+
+    /// <summary>判定“已经滚到头”的容差：布局舍入会留下 1px 左右的偏移，别因此把箭头点亮。</summary>
+    private const double TabScrollEpsilon = 1.5;
+
+    /// <summary>
+    /// 分组放不下时（内容宽 &gt; 视口宽）才显示箭头；能继续滚的方向才可点。
+    /// <para>
+    /// 箭头显示后视口会变窄，但只会让内容“更放不下”，不会出现显隐抖动：
+    /// 反过来只有当内容连同箭头都塞得下时才会隐藏，而那时已经不需要滚动了。
+    /// </para>
+    /// </summary>
+    private void UpdateTabArrows()
+    {
+        if (TabArrows is null || TabLeftButton is null) return;
+
+        var overflow = TabScroll.ScrollableWidth > TabScrollEpsilon;
+        var wanted = overflow ? Visibility.Visible : Visibility.Collapsed;
+        if (TabArrows.Visibility != wanted) TabArrows.Visibility = wanted;
+        if (!overflow) return;
+
+        var canLeft = TabScroll.HorizontalOffset > TabScrollEpsilon;
+        var canRight = TabScroll.HorizontalOffset < TabScroll.ScrollableWidth - TabScrollEpsilon;
+        if (TabLeftButton.IsEnabled != canLeft) TabLeftButton.IsEnabled = canLeft;
+        if (TabRightButton.IsEnabled != canRight) TabRightButton.IsEnabled = canRight;
+    }
+
+    private void TabLeft_Click(object sender, RoutedEventArgs e) => ScrollTabs(-TabScrollStep);
+
+    private void TabRight_Click(object sender, RoutedEventArgs e) => ScrollTabs(+TabScrollStep);
+
+    private void ScrollTabs(double delta)
+    {
+        var target = Math.Clamp(TabScroll.HorizontalOffset + delta, 0, TabScroll.ScrollableWidth);
+        TabScroll.ScrollToHorizontalOffset(target);
+        UpdateTabArrows();
+    }
+
+    /// <summary>把指定标签滚进可视区域（新建分组、排序落点、切换分组时会用到）。</summary>
+    private void BringGroupIntoView(ShortcutGroupViewModel group)
+    {
+        if (TabList.ItemContainerGenerator.ContainerFromItem(group) is not ListBoxItem container) return;
+        if (container.ActualWidth <= 0) return;
+
+        double left;
+        try { left = container.TransformToAncestor(TabList).Transform(new Point(0, 0)).X; }
+        catch { return; }   // 还没来得及布局
+
+        var right = left + container.ActualWidth;
+        var offset = TabScroll.HorizontalOffset;
+        var viewport = TabScroll.ViewportWidth;
+
+        if (left < offset) TabScroll.ScrollToHorizontalOffset(left);
+        else if (right > offset + viewport) TabScroll.ScrollToHorizontalOffset(right - viewport);
+        UpdateTabArrows();
+    }
+
+    private void TabList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ViewModel.SelectedGroup is not { } group) return;
+        // 容器要等布局完成才拿得到
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => BringGroupIntoView(group)));
     }
 
     // ---- 分组标签拖拽排序 ----
@@ -441,12 +626,19 @@ public partial class MainWindow : Window
         var target = GroupFrom(e.OriginalSource);
         if (target is null)
         {
-            if (ViewModel.MoveGroupToEnd(source)) ViewModel.StatusText = $"“{source.Name}”已移到最后";
+            if (ViewModel.MoveGroupToEnd(source))
+            {
+                ViewModel.StatusText = $"“{source.Name}”已移到最后";
+                BringGroupIntoView(source);
+            }
             return;
         }
 
         if (ViewModel.MoveGroupTo(source, target, _tabInsertAfter))
+        {
             ViewModel.StatusText = $"“{source.Name}”已重新排序";
+            BringGroupIntoView(source);
+        }
     }
 
     /// <summary>鼠标落在标签的右半边 → 插到它后面，左半边 → 插到前面。</summary>
@@ -691,19 +883,23 @@ public partial class MainWindow : Window
 
     private void TileMenu_Opened(object sender, RoutedEventArgs e)
     {
-        _menuTarget = ViewModel.SelectedItem;
+        var selected = SelectedTiles();
+        var count = selected.Count;
+        _menuTarget = ViewModel.SelectedItem ?? selected.FirstOrDefault();
         var has = _menuTarget is not null;
+        var single = count == 1;          // 多选时只有“移除/复制路径”这类逐项操作有意义
+        var any = count > 0;
 
-        if (sender is not ContextMenu menu) return;
-        foreach (var obj in menu.Items)
-        {
-            if (obj is MenuItem mi && mi.Header is string header &&
-                (header == "打开" || header == "在资源管理器中显示" || header == "重命名" || header == "编辑路径" ||
-                 header == "发送到其他分组" || header == "移除" || header == "打开所在目录" || header == "复制路径"))
-            {
-                mi.IsEnabled = has;
-            }
-        }
+        OpenMenu.IsEnabled = single;
+        RevealMenu.IsEnabled = has;
+        RenameMenu.IsEnabled = single && _menuTarget is { IsRenaming: false };
+        EditPathMenu.IsEnabled = single;
+        SendToMenu.IsEnabled = single;
+        RemoveMenu.IsEnabled = any;
+        OpenParentMenu.IsEnabled = has;
+        CopyPathMenu.IsEnabled = any;
+
+        RemoveMenu.Header = count > 1 ? $"移除 {count} 项" : "移除";
 
         SendToMenu.Items.Clear();
         if (_menuTarget is not null)
@@ -725,6 +921,24 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>当前选中的磁贴（Ctrl/Shift 多选时可能不止一个）。</summary>
+    private List<ShortcutViewModel> SelectedTiles()
+        => TileList.SelectedItems.OfType<ShortcutViewModel>().ToList();
+
+    /// <summary>
+    /// 右键落在未选中的磁贴上时，先把选择收敛到它（和资源管理器一致）；
+    /// 右键点在已选中的磁贴上则保留当前多选，这样“移除 N 项”才能批量生效。
+    /// </summary>
+    private void TileList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (ItemFrom(e.OriginalSource) is not { } item) return;   // 右键空白处：保留现有选择
+        if (TileList.SelectedItems.Contains(item)) return;
+
+        TileList.SelectedItems.Clear();
+        TileList.SelectedItem = item;
+    }
+
+    /// <summary>右键菜单里的“移除”入口。</summary>
     private void SendToGroup_Click(object sender, RoutedEventArgs e)    {
         if (sender is not MenuItem { Tag: ShortcutGroupViewModel group }) return;
         if (_menuTarget is null) return;
@@ -759,11 +973,18 @@ public partial class MainWindow : Window
 
     private void CopyPath_Click(object sender, RoutedEventArgs e)
     {
-        if (_menuTarget is not { } item) return;
+        // 多选时把所有选中项的路径一起复制（每行一个）
+        var paths = SelectedTiles().Select(i => i.Path).ToList();
+        if (paths.Count == 0)
+        {
+            if (_menuTarget is { } only) paths.Add(only.Path);
+        }
+        if (paths.Count == 0) return;
+
         try
         {
-            Clipboard.SetText(item.Path);
-            ViewModel.StatusText = "路径已复制";
+            Clipboard.SetText(string.Join(Environment.NewLine, paths));
+            ViewModel.StatusText = paths.Count == 1 ? "路径已复制" : $"已复制 {paths.Count} 条路径";
         }
         catch { /* 剪贴板偶发占用 */ }
     }
@@ -810,13 +1031,21 @@ public partial class MainWindow : Window
             : $"路径已更新（相对路径存储）：{item.Name}";
     }
 
-    private void Remove_Click(object sender, RoutedEventArgs e) => RemoveSelectedItem();
+    private void Remove_Click(object sender, RoutedEventArgs e) => RemoveSelectedItems();
 
-    private void RemoveSelectedItem()
+    /// <summary>删除选中的磁贴；多选时一次删掉全部（只是从列表里移除，不动磁盘文件）。</summary>
+    private void RemoveSelectedItems()
     {
-        if (ViewModel.SelectedItem is not { } item) return;
-        ViewModel.RemoveItem(item);
-        ViewModel.StatusText = $"已移除 {item.Name}（磁盘文件未删除）";
+        var items = SelectedTiles();
+        if (items.Count == 0) return;
+
+        var name = items[0].Name;
+        var removed = ViewModel.RemoveItems(items);
+        if (removed <= 0) return;
+
+        ViewModel.StatusText = removed == 1
+            ? $"已移除 {name}（磁盘文件未删除）"
+            : $"已移除 {removed} 项（磁盘文件未删除）";
     }
 
     private void BeginItemRename(ShortcutViewModel item)

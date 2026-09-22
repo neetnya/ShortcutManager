@@ -55,6 +55,16 @@ public partial class App : Application
     {
         // ---- 单实例：重复双击不再开第二个窗口 ----
         // 已有实例时把它的窗口还原出来（可能正被最小化），然后本进程退出。
+        //
+        // 但自动化/调试开关不属于“用户双击”场景，必须真的跑起来：
+        // 否则用户正开着程序时，--traytest / --uitest 会被这里静默拦掉，
+        // 而且因为走的是正常退出路径，退出码还是 0 —— 变成“假绿”。
+        if (IsAutomationRun)
+        {
+            StartApp();
+            return;
+        }
+
         _singleInstanceMutex = new Mutex(true, SingleInstanceName, out var isFirst);
         if (!isFirst)
         {
@@ -66,7 +76,26 @@ public partial class App : Application
         }
 
         StartActivationListener();
+        StartApp();
+    }
 
+    /// <summary>只给自动化/调试用的开关，启动时不做单实例拦阻。</summary>
+    private static readonly string[] AutomationSwitches =
+    {
+        "--traytest", "--uitest", "--shot", "--import", "--diag",
+    };
+
+    private static bool IsAutomationRun
+    {
+        get
+        {
+            var args = Environment.GetCommandLineArgs();
+            return args.Any(a => AutomationSwitches.Contains(a.ToLowerInvariant()));
+        }
+    }
+
+    private void StartApp()
+    {
         // 关掉主窗口 = 退出程序（没有托盘常驻）
         ShutdownMode = ShutdownMode.OnMainWindowClose;
 
