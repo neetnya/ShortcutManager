@@ -30,6 +30,20 @@ public partial class App : Application
             return;
         }
 
+        // 图标诊断模式（不启动界面）：--icon <路径>，结果写入 icon-diag.log
+        var iconIdx = Array.FindIndex(args, a => string.Equals(a, "--icon", StringComparison.OrdinalIgnoreCase));
+        if (iconIdx >= 0 && iconIdx + 1 < args.Length)
+        {
+            var target = args[iconIdx + 1];
+            try
+            {
+                var text = ShellIcons.Diagnose(target, Directory.Exists(target));
+                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "icon-diag.log"), text, System.Text.Encoding.UTF8);
+            }
+            catch { /* ignore */ }
+            return;
+        }
+
         var app = new App();
         app.InitializeComponent();
         app.Run();

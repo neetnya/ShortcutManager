@@ -19,6 +19,7 @@ internal static class SelfTest
             (Environment.GetFolderPath(Environment.SpecialFolder.System), true),
             (Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "notepad.exe"), false),
             (Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"), false),
+            (Environment.ProcessPath ?? string.Empty, false),   // 本程序自身：带自定义图标的 exe
             (Path.Combine(Path.GetTempPath(), "sm-test-data", "readme.txt"), false),
             (@"C:\definitely\missing\thing.txt", false),
         };
@@ -32,10 +33,14 @@ internal static class SelfTest
             catch (Exception ex) { err = ex.GetType().Name + ": " + ex.Message; }
 
             if (src is null)
+            {
                 W($"FAIL  {path}  -> null  {err}");
-            else
-                W($"OK    {path}  -> {src.Width}x{src.Height} {src.GetType().Name}");
-            if (src is not null) ok++;
+                continue;
+            }
+
+            var fellBack = ShellIcons.IsBuiltInFallback(src, isDir);
+            W($"{(fellBack ? "FALLBACK" : "OK      ")}  {path}  -> {src.Width}x{src.Height} {src.GetType().Name}{(fellBack ? "  (提取失败，用了兜底图)" : string.Empty)}");
+            if (!fellBack) ok++;
         }
 
         // 配置读写往返

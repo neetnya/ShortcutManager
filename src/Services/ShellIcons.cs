@@ -42,6 +42,10 @@ public static class ShellIcons
     private static readonly Dictionary<string, ImageSource> Cache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly object Gate = new();
 
+    // 提取串行化：Shell 图标缓存在首次提取时并发调用会偶发返回空句柄，
+    // 一旦拿到空结果就会退化成兜底图标，所以这里保证同一时刻只有一个提取在跑。
+    private static readonly object ExtractGate = new();
+
     private static ImageSource? _fallbackFolder;
     private static ImageSource? _fallbackFile;
 
@@ -54,7 +58,23 @@ public static class ShellIcons
             if (Cache.TryGetValue(key, out var hit)) return hit;
         }
 
-        var image = Load(path, isDirectory) ?? Fallback(isDirectory);
+        // 提取串行化：Shell 图标缓存对同一路径的并发首次提取会偶发返回空句柄，
+        // 结果就是「图标显示成兜底图」。但不能让 UI 线程无限等锁（目标可能在慢速网络盘上），
+        // 抢不到锁就先给兜底图 —— 兜底图不入缓存，下次重绘/刷新会再试一次。
+        ImageSource? image = null;
+        var locked = false;
+        try
+        {
+            locked = Monitor.TryEnter(ExtractGate, TimeSpan.FromMilliseconds(1500));
+            if (locked) image = Load(path, isDirectory) ?? ExtractFromFile(path);
+        }
+        finally
+        {
+            if (locked) Monitor.Exit(ExtractGate);
+        }
+
+        // 提取失败时不缓存兜底图：下次还有机会拿到真实图标
+        if (image is null) return Fallback(isDirectory);
 
         lock (Gate)
         {
@@ -62,6 +82,10 @@ public static class ShellIcons
         }
         return image;
     }
+
+    /// <summary>是不是程序自带的兜底图标（用于判断「这张图不是真实图标」）。</summary>
+    public static bool IsBuiltInFallback(ImageSource? image, bool isDirectory)
+        => image is not null && ReferenceEquals(image, Fallback(isDirectory));
 
     private static ImageSource? Load(string path, bool isDirectory)
     {
@@ -92,31 +116,80 @@ public static class ShellIcons
         }
     }
 
-    /// <summary>程序自带的兜底图标（Shell 也失败时使用）。</summary>
-    private static ImageSource Fallback(bool isDirectory)
+    /// <summary>
+    /// 诊断用（--icon &lt;路径&gt;）：逐步记录一次图标提取的结果，
+    /// 用于排查「某个文件的图标为什么显示成兜底图标」。
+    /// </summary>
+    public static string Diagnose(string path, bool isDirectory)
     {
-        if (isDirectory)
-            return _fallbackFolder ??= BuildFallback(isDirectory);
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"path       : {path}");
+        sb.AppendLine($"isDir      : {isDirectory}");
+        sb.AppendLine($"fileExists : {File.Exists(path)}   dirExists: {Directory.Exists(path)}");
 
-        // 优先用 exe 自身图标作为“文件”占位
-        try
+        var info = new SHFILEINFO();
+        uint flags = SHGFI_ICON | SHGFI_LARGEICON;
+        bool exists = isDirectory ? Directory.Exists(path) : File.Exists(path);
+        if (!exists) flags |= SHGFI_USEFILEATTRIBUTES;
+        uint attrs = isDirectory ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL;
+
+        var res = SHGetFileInfo(path, attrs, ref info, (uint)Marshal.SizeOf<SHFILEINFO>(), flags);
+        sb.AppendLine($"SHGetFileInfo: res={res} hIcon={info.hIcon} iIcon={info.iIcon} flags=0x{flags:X} type='{info.szTypeName}'");
+
+        if (info.hIcon != IntPtr.Zero)
         {
-            var exe = Environment.ProcessPath;
-            if (!string.IsNullOrEmpty(exe))
+            try
             {
-                var ico = System.Drawing.Icon.ExtractAssociatedIcon(exe);
-                if (ico is not null)
-                {
-                    var src = Imaging.CreateBitmapSourceFromHIcon(ico.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-                    src.Freeze();
-                    return src;
-                }
+                var src = Imaging.CreateBitmapSourceFromHIcon(info.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                sb.AppendLine($"FromHIcon  : OK {src.Width}x{src.Height} {src.GetType().Name} fmt={src.Format}");
+                src.Freeze();
+                sb.AppendLine("Freeze     : OK");
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine("FromHIcon  : THREW " + ex.GetType().Name + ": " + ex.Message);
+            }
+            finally
+            {
+                DestroyIcon(info.hIcon);
             }
         }
-        catch { /* ignore */ }
 
-        return _fallbackFile ??= BuildFallback(isDirectory);
+        var viaExtract = ExtractFromFile(path);
+        sb.AppendLine($"PrivateExtractIcons: {(viaExtract is null ? "null" : viaExtract.Width + "x" + viaExtract.Height)}");
+
+        var final = Get(path, isDirectory);
+        sb.AppendLine($"final      : {final.Width}x{final.Height} {final.GetType().Name}"
+                      + (IsBuiltInFallback(final, isDirectory) ? "  <= 兜底图标（提取失败）" : ""));
+        return sb.ToString();
     }
+
+    /// <summary>直接从文件的图标资源里提取（绕开 Shell 缓存/类型关联），失败返回 null。</summary>
+    private static ImageSource? ExtractFromFile(string path)
+    {
+        try
+        {
+            var src = System.Drawing.Icon.ExtractAssociatedIcon(path);
+            if (src is null) return null;
+            var result = Imaging.CreateBitmapSourceFromHIcon(src.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            result.Freeze();
+            return result;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 程序自带的兜底图标：Shell 与文件资源都提取不到时才用。
+    /// 刻意不用本程序 exe 自身的图标做「文件」占位 —— 那会让用户以为
+    /// 「我的图标被换成了这个工具的图标」，也分不清是提取失败还是本来就这样。
+    /// </summary>
+    private static ImageSource Fallback(bool isDirectory)
+        => isDirectory
+            ? _fallbackFolder ??= BuildFallback(true)
+            : _fallbackFile ??= BuildFallback(false);
 
     private static ImageSource BuildFallback(bool isDirectory)
     {

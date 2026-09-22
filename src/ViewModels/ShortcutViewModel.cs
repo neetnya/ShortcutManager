@@ -43,7 +43,12 @@ public sealed class ShortcutViewModel : ObservableObject
         {
             if (_icon is null)
             {
-                _icon = ShellIcons.Get(_model.FullPath, _model.IsDirectory);
+                var image = ShellIcons.Get(_model.FullPath, _model.IsDirectory);
+
+                // 兜底图（提取失败）不写进缓存字段：刷新/重新加载时还能再试一次拿到真实图标
+                if (ShellIcons.IsBuiltInFallback(image, _model.IsDirectory)) return image;
+
+                _icon = image;
                 Raise();
             }
             return _icon;

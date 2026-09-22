@@ -122,13 +122,27 @@ public partial class MainWindow : Window
             encoder.Save(fs);
 
             var src = PresentationSource.FromVisual(this);
-            TryWriteLog("shot.log", new[]
+            var lines = new List<string>
             {
                 $"saved={path}",
                 $"size(DIP)={w}x{h}",
                 $"transform={src?.CompositionTarget?.TransformToDevice}",
                 $"groups={ViewModel.Groups.Count} items={ViewModel.SelectedItems?.Count}",
-            });
+            };
+
+            // 顺带记录每格图标来源，便于排查「图标显示成兜底图」这类问题
+            if (ViewModel.SelectedItems is { } items)
+            {
+                foreach (var it in items)
+                {
+                    var img = it.Icon;
+                    lines.Add($"icon '{it.Name}' path='{it.Path}' stored='{it.StoredPath}' exists={it.Exists} " +
+                              $"image={(img is null ? "null" : $"{img.GetType().Name} {img.Width}x{img.Height}")} " +
+                              $"builtInFallback={ShellIcons.IsBuiltInFallback(img, it.IsDirectory)}");
+                }
+            }
+
+            TryWriteLog("shot.log", lines.ToArray());
         }
         catch (Exception ex)
         {
