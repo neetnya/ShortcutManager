@@ -12,6 +12,10 @@ public partial class App : Application
     private Mutex? _singleInstanceMutex;
     private MainWindow? _window;
     private ConfigStore? _store;
+    private SettingsStore? _settingsStore;
+    private AppSettings _settings = new();
+    private GlobalHotkeyManager? _hotkeys;
+    private SettingsWindow? _settingsWindow;
 
     [STAThread]
     public static void Main(string[] args)
@@ -82,7 +86,7 @@ public partial class App : Application
     /// <summary>只给自动化/调试用的开关，启动时不做单实例拦阻。</summary>
     private static readonly string[] AutomationSwitches =
     {
-        "--traytest", "--uitest", "--shot", "--import", "--diag",
+        "--traytest", "--uitest", "--shot", "--import", "--diag", "--hotkeytest",
     };
 
     private static bool IsAutomationRun
@@ -96,8 +100,14 @@ public partial class App : Application
 
     private void StartApp()
     {
-        // 关掉主窗口 = 退出程序（没有托盘常驻）
-        ShutdownMode = ShutdownMode.OnMainWindowClose;
+        // 主窗口关闭不一定退出：关闭按钮默认最小化到托盘（后台常驻），
+        // 因此不能用 OnMainWindowClose，改由代码在真正退出时调用 Shutdown。
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+        // ---- 载入设置（settings.json，与 config.json 分离）----
+        _settingsStore = new SettingsStore();
+        try { _settings = _settingsStore.Load(); }
+        catch { _settings = new AppSettings(); }
 
         // ---- 载入配置（同步、很快；无需配置文件时几乎零开销）----
         _store = new ConfigStore();
@@ -117,11 +127,32 @@ public partial class App : Application
         // （即使程序被强制结束，也不会有“配置从来没写过”的窗口期）
         vm.Save();
 
-        _window = new MainWindow(vm);
+        _window = new MainWindow(vm, _settings, _settingsStore);
         MainWindow = _window;
 
-        _window.Show();
-        ForceForeground(_window);
+        // 关闭行为配置通过 MainWindow 的 Closing 事件处理（见 MainWindow）
+        // 托盘退出时回调这里真正结束进程
+        _window.ExitRequested += () => Shutdown();
+
+        // 开机自启：按设置同步一次注册表（防止上次改设置后没落盘）
+        SyncAutoStart();
+
+        // 先让窗口完成 SourceInitialized（拿到真实 HWND 与消息循环），再注册全局快捷键，
+        // 否则 RegisterHotKey 会挂在一个尚未就绪的窗口句柄上，快捷键收不到 WM_HOTKEY。
+        if (_settings.StartMinimized)
+        {
+            _window.HideToTrayOnStartup();
+        }
+        else
+        {
+            _window.Show();
+            ForceForeground(_window);
+        }
+
+        // 全局唤起快捷键：注册到主窗口消息循环（窗口在托盘/隐藏时也生效）
+        _hotkeys = new GlobalHotkeyManager();
+        _hotkeys.Activated += OnHotkeyActivated;
+        _hotkeys.Attach(_window, _settings);
 
         // 启动后预热所有分组的图标缓存（后台线程，不阻塞首屏）
         Task.Run(() =>
@@ -132,6 +163,63 @@ public partial class App : Application
                 ImportService.WarmIcons(items);
             }
         });
+
+        // ---- 全局快捷键验证：注册状态 + 触发链，结果写入 hotkey-test.log ----
+        if (Environment.GetCommandLineArgs().Any(a => a == "--hotkeytest"))
+        {
+            var log = new List<string>();
+            log.Add($"registered={_hotkeys!.IsRegistered}");
+            log.Add($"hwnd={App.HandleOf(_window)}");
+            log.Add($"modifiers={_settings.HotkeyModifiers} key={_settings.HotkeyKey} (default Alt+Q = 1/81)");
+            // 走真实触发链：隐藏窗口 → 模拟 WM_HOTKEY → 应被唤起
+            _window.HideToTrayOnStartup();
+            _hotkeys.SimulateHotkey();
+            System.Threading.Thread.Sleep(500);
+            log.Add($"after-simulate visible={_window.IsVisible} inTaskbar={_window.ShowInTaskbar} state={_window.WindowState}");
+            var ok = _hotkeys.IsRegistered && _window.IsVisible;
+            log.Add($"result={(ok ? "PASS" : "FAIL")}");
+            Environment.ExitCode = ok ? 0 : 1;
+            try { File.WriteAllLines(Path.Combine(AppContext.BaseDirectory, "hotkey-test.log"), log, System.Text.Encoding.UTF8); } catch { }
+            _window.ExitApplicationForTest();
+        }
+    }
+
+    /// <summary>全局快捷键触发：唤起主窗口（若在托盘则恢复，否则置前）。</summary>
+    private void OnHotkeyActivated()
+    {
+        if (_window is null) return;
+        if (!_window.IsVisible) _window.RestoreFromTray();
+        else App.ForceForeground(_window);
+    }
+
+    /// <summary>按设置同步开机自启注册表（尽力而为，失败静默）。</summary>
+    private void SyncAutoStart()
+    {
+        try { AutoStartService.SetEnabled(_settings.AutoStart); }
+        catch { /* ignore */ }
+    }
+
+    /// <summary>打开设置窗口（托盘菜单“设置”调用）。</summary>
+    internal void OpenSettings()
+    {
+        if (_settingsWindow is { IsLoaded: true })
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        var vm = new ViewModels.SettingsViewModel(_settingsStore!, _settings);
+        _settingsWindow = new SettingsWindow(vm, _hotkeys!) { Owner = _window };
+        _settingsWindow.Closed += (_, _) =>
+        {
+            // 设置窗口关闭后，把最终值写回内存，确保全局快捷键与自启即时生效
+            _settings = _settingsWindow.AppliedSettings;
+            _settingsStore!.Save(_settings);
+            _hotkeys?.Reregister(_settings);
+            SyncAutoStart();
+            _settingsWindow = null;
+        };
+        _settingsWindow.Show();
     }
 
     /// <summary>
@@ -278,6 +366,8 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         try { _window?.ViewModel.Save(); } catch { /* ignore */ }
+        try { _hotkeys?.Dispose(); } catch { /* ignore */ }
+        try { _settingsWindow?.Close(); } catch { /* ignore */ }
         try { _activateRegistration?.Unregister(null); } catch { /* ignore */ }
         try { _activateSignal?.Dispose(); } catch { /* ignore */ }
         try { _singleInstanceMutex?.ReleaseMutex(); } catch { /* ignore */ }

@@ -27,11 +27,19 @@ public partial class MainWindow : Window
     private ShortcutViewModel? _menuTarget;
     private bool _insertAfter;
 
+    private readonly AppSettings _settings;
+    private readonly SettingsStore _settingsStore;
+
     public MainViewModel ViewModel { get; }
 
-    public MainWindow(MainViewModel viewModel)
+    /// <summary>真正需要退出进程时触发（关闭按钮=退出、托盘菜单“退出”）。</summary>
+    public event Action? ExitRequested;
+
+    public MainWindow(MainViewModel viewModel, AppSettings settings, SettingsStore settingsStore)
     {
         ViewModel = viewModel;
+        _settings = settings;
+        _settingsStore = settingsStore;
         DataContext = viewModel;
         InitializeComponent();
 
@@ -43,7 +51,7 @@ public partial class MainWindow : Window
             if (ViewModel.SelectedItem is { } item) BeginItemRename(item);
         });
         CommandBindings.Add(renameBinding);
-        CommandBindings.Add(new CommandBinding(QuitCommand, (_, _) => Close()));
+        CommandBindings.Add(new CommandBinding(QuitCommand, (_, _) => ExitApplication()));
 
         Loaded += OnLoaded;
         Closing += OnClosing;
@@ -191,6 +199,7 @@ public partial class MainWindow : Window
 
                 UiTestLog($"result={(ok ? "PASS" : "FAIL")}");
                 Environment.ExitCode = ok ? 0 : 1;
+                _forceExit = true;   // 自动化：Close 必须真退出，不能进托盘
                 Close();   // SuppressSave 仍为 true：关闭时不会把测试数据写回配置
             }));
         }
@@ -211,7 +220,7 @@ public partial class MainWindow : Window
             }));
         }
 
-        // ---- 托盘行为验证：最小化→托盘→恢复→关闭，结果写入 tray-test.log ----
+        // ---- 托盘行为验证：最小化=普通最小化，关闭=进托盘（默认），恢复，退出，结果写入 tray-test.log ----
         if (args.Any(a => a == "--traytest"))
         {
             _trayLog = new List<string>();
@@ -223,22 +232,33 @@ public partial class MainWindow : Window
                 TrayTestLog($"start: visible={IsVisible} inTaskbar={ShowInTaskbar} state={WindowState}");
                 ok &= IsVisible && ShowInTaskbar && WindowState == WindowState.Normal;
 
-                // 1) 最小化（点标题栏最小化按钮 / Esc / Ctrl+W 都走这条路径）
+                // 1) 最小化 = 普通最小化：窗口仍在任务栏、不进托盘
                 WindowState = WindowState.Minimized;
                 await Task.Delay(500);
+                var normalMin = WindowState == WindowState.Minimized && ShowInTaskbar && _tray is not { IsVisible: true };
+                TrayTestLog($"expect-normal-minimize(最小化但仍在任务栏、无托盘)={normalMin}");
+                ok &= normalMin;
+
+                // 还原以便后续测试
+                WindowState = WindowState.Normal;
+                await Task.Delay(300);
+
+                // 2) 关闭 = 进托盘（默认 CloseToTray=true）：窗口隐藏 + 无任务栏按钮 + 托盘图标存在
+                Close();
+                await Task.Delay(500);
                 var toTray = !IsVisible && !ShowInTaskbar && _tray is { IsVisible: true };
-                TrayTestLog($"expect-to-tray(窗口隐藏+无任务栏按钮+托盘图标存在)={toTray}");
+                TrayTestLog($"expect-close-to-tray(窗口隐藏+无任务栏按钮+托盘图标存在)={toTray}");
                 ok &= toTray;
 
-                // 2) 恢复：走真实的托盘点击处理链
-                //    2a. 右键应弹菜单、不动窗口（回归：别把右键也接成唤出）
+                // 3) 恢复：走真实的托盘点击处理链
+                //    3a. 右键应弹菜单、不动窗口（回归：别把右键也接成唤出）
                 Tray.SimulateClick(System.Windows.Forms.MouseButtons.Right);
                 await Task.Delay(250);
                 var rightNoop = !IsVisible && !ShowInTaskbar;
                 TrayTestLog($"expect-rightclick-noop(右键不恢复窗口)={rightNoop}");
                 ok &= rightNoop;
 
-                //    2b. 等一会儿再单击左键：这段时间留给外部脚本把前台抢走，
+                //    3b. 等一会儿再单击左键：这段时间留给外部脚本把前台抢走，
                 //        这样才复现得出“别的程序正占着前台”的真实场景
                 TrayTestLog($"wait-for-focus-steal(3000ms)：外部脚本可在此时激活别的窗口");
                 await Task.Delay(3000);
@@ -252,7 +272,7 @@ public partial class MainWindow : Window
                 TrayTestLog($"expect-restored(窗口可见+任务栏按钮+Normal)={back}");
                 ok &= back;
 
-                // 2c. Win32 层的真实状态：这两条才是用户看到的东西
+                // 3c. Win32 层的真实状态：这两条才是用户看到的东西
                 var notIconic = !App.IsMinimizedHwnd(this);
                 TrayTestLog($"expect-not-minimized(Win32 IsIconic=false)={notIconic}");
                 ok &= notIconic;
@@ -261,10 +281,11 @@ public partial class MainWindow : Window
                 TrayTestLog($"expect-foreground(Win32 前台=本窗口)={isForeground}");
                 ok &= isForeground;
 
-                // 3) 关闭 = 真退出：Close() 后进程结束，结论用退出码表达
+                // 4) 自动化强制真退出：Close() 后进程结束，结论用退出码表达
+                _forceExit = true;
                 TrayTestLog($"result={(ok ? "PASS" : "FAIL")}");
                 Environment.ExitCode = ok ? 0 : 1;
-                Close();
+                ExitApplication();
             }));
         }
     }
@@ -330,13 +351,48 @@ public partial class MainWindow : Window
 
     private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        // 关闭就是关闭：保存配置后让窗口正常关闭，进程随之退出。
-        // （ShutdownMode = OnMainWindowClose）
+        // 真正退出：保存配置、摘掉托盘图标
+        if (_exiting)
+        {
+            ViewModel.Save();
+            _tray?.Dispose();
+            _tray = null;
+            TrayTestLog("closing: 退出，配置已保存，托盘图标已释放");
+            return;
+        }
+
+        // 自动化测试（--uitest / --traytest）里 Close() 必须真退出，否则进程不结束
+        if (_forceExit)
+        {
+            ExitApplication();
+            return;
+        }
+
+        // 关闭按钮：按设置决定是进托盘还是退出
+        if (_settings.CloseToTray)
+        {
+            e.Cancel = true;          // 不关闭，改为收进托盘
+            HideToTray();
+        }
+        else
+        {
+            ExitApplication();
+        }
+    }
+
+    /// <summary>真正退出：保存配置、释放托盘、结束进程。</summary>
+    private void ExitApplication()
+    {
+        if (_exiting) return;
         _exiting = true;
-        ViewModel.Save();
-        _tray?.Dispose();   // 摘掉托盘图标，别在托盘里留幽灵图标
-        _tray = null;
-        TrayTestLog("closing: 关闭事件已触发，配置已保存，托盘图标已释放");
+        ExitRequested?.Invoke();
+    }
+
+    /// <summary>自动化验证（--hotkeytest）用：强制走真退出，不受「关闭进托盘」设置影响。</summary>
+    internal void ExitApplicationForTest()
+    {
+        _forceExit = true;
+        ExitApplication();
     }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -351,12 +407,13 @@ public partial class MainWindow : Window
     }
 
     // ==================================================================
-    //  最小化到托盘 / 关闭即退出
+    //  最小化（普通最小化，留在任务栏）/ 关闭（进托盘或退出，可配置）
     // ==================================================================
 
     private TrayIcon? _tray;
     private bool _inTray;
     private bool _exiting;
+    private bool _forceExit;
 
     private TrayIcon Tray
     {
@@ -366,33 +423,51 @@ public partial class MainWindow : Window
             {
                 _tray = new TrayIcon();
                 _tray.Activated += RestoreFromTray;
-                _tray.ExitRequested += ExitFromTray;
+                _tray.ExitRequested += ExitApplication;
+                _tray.SettingsRequested += OpenSettings;
             }
             return _tray;
         }
     }
 
-    /// <summary>最小化 → 收进托盘（任务栏按钮同时消失），程序继续在后台运行。</summary>
+    /// <summary>
+    /// 最小化现在就是普通最小化：窗口缩到任务栏，不进托盘。
+    /// 原来 StateChanged 里的 HideToTray 已移除——只有关闭按钮（且设置为进托盘）
+    /// 或启动最小化才会收进托盘。
+    /// </summary>
     private void OnStateChanged(object? sender, EventArgs e)
     {
-        if (WindowState == WindowState.Minimized) HideToTray();
+        // 保留此钩子用于 --traytest 的日志，不再做最小化→托盘的联动
     }
 
+    /// <summary>关闭按钮 → 收进托盘（任务栏按钮消失，程序后台运行）。</summary>
     private void HideToTray()
     {
         if (_inTray || _exiting) return;
 
         _inTray = true;
-        Tray.Show();                // 第一次最小化时才创建托盘图标
+        Tray.Show();
         ShowInTaskbar = false;
         Hide();
-        ViewModel.StatusText = "已最小化到托盘，单击托盘图标即可恢复";
+        ViewModel.StatusText = "";
         TrayTestLog($"minimized: visible={IsVisible} inTaskbar={ShowInTaskbar} " +
                     $"state={WindowState} tray={_tray?.IsVisible == true}");
     }
 
+    /// <summary>启动时按设置直接进托盘（后台运行，不弹窗）。</summary>
+    public void HideToTrayOnStartup()
+    {
+        _inTray = true;
+        // 必须先 Show 一次让 HWND / SourceInitialized 真正建立（否则后续全局快捷键
+        // 会注册到空句柄上，收不到 WM_HOTKEY），再立刻隐藏，用户看不到闪烁。
+        ShowInTaskbar = false;
+        Show();
+        Tray.Show();
+        Hide();
+    }
+
     /// <summary>
-    /// 从托盘恢复窗口（单击托盘图标、重复启动 exe、点菜单“显示主窗口”都会走这里）。
+    /// 从托盘恢复窗口（单击托盘图标、重复启动 exe、点菜单“显示主窗口”、全局快捷键都会走这里）。
     /// <para>
     /// 顺序很关键，**不能**在隐藏状态下先改 WindowState：那样只改了 WPF 的属性，
     /// Win32 窗口的显示状态没变，随后 Show() 会让它以“最小化”的样子出现
@@ -414,10 +489,9 @@ public partial class MainWindow : Window
                     $"active={IsActive} iconic={App.IsMinimizedHwnd(this)} foreground={App.IsForeground(this)}");
     }
 
-    private void ExitFromTray()
+    private void OpenSettings()
     {
-        _exiting = true;
-        Close();   // 走正常关闭流程：存盘 + 释放托盘图标 + 退出进程
+        ((App)Application.Current).OpenSettings();
     }
 
     /// <summary>开发验证用：--traytest 把最小化/恢复/关闭的每一步状态写入 tray-test.log。</summary>

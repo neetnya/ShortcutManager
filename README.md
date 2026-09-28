@@ -19,8 +19,11 @@
 - **拖拽排序** — 按住格子拖到目标位置，左侧或右侧出现蓝色插入线，松手即完成排序
 - **多选删除** — 按住 `Ctrl` 点选、`Shift` 选一段，按 `Delete` 或右键「移除 N 项」一次删掉多个
 - **拖入即导入** — 从资源管理器把文件/文件夹直接拖进窗口就能添加
-- **最小化到托盘** — 点最小化按钮（或 `Esc` / `Ctrl+W`）收进托盘继续后台运行，单击托盘图标即恢复
-- **关闭即退出** — 点右上角 `✕` 或 `Ctrl+Q` 真的退出，不驻留后台
+- **设置窗口** — 托盘右键 → 设置，可配置关闭行为、全局唤起快捷键、开机自启、启动最小化
+- **最小化即最小化** — 点最小化按钮（或 `Esc` / `Ctrl+W`）就是普通最小化，窗口缩到任务栏
+- **关闭进托盘（默认）** — 点右上角 `✕` 默认收进托盘后台运行；可在设置里改成「关闭即退出」
+- **全局快捷键唤起** — 默认 `Alt+Q`，在任意程序里按下即可唤起本软件（可改）
+- **开机自启** — 可在设置里开启，写入当前用户 Run 注册表项
 - **便携** — 配置存在 exe 同目录的 `config.json`，整个文件夹拷走即可迁移；
   位于程序目录内的条目自动存为**相对路径**，迁移后依然有效
 
@@ -50,11 +53,24 @@
 | 删除分组 | 右键 tab → 删除分组 |
 | 重命名分组 | 双击 tab / 右键 tab → 重命名分组 |
 | 调整分组顺序 | 按住 tab 拖到目标位置（拖到标签栏空白处 = 移到最后） |
-| 最小化到托盘 | 点最小化按钮 / `Esc` / `Ctrl+W` |
-| 还原窗口 | 单击托盘图标 / 托盘右键 → 显示主窗口 / 再运行一次 exe |
-| 退出程序 | 点窗口关闭按钮 / `Ctrl+Q` / 托盘右键 → 退出 |
+| 最小化 | 点最小化按钮 / `Esc` / `Ctrl+W`（普通最小化，缩到任务栏） |
+| 关闭进托盘 | 点右上角 `✕`（默认行为，可在设置里改成退出） |
+| 还原窗口 | 单击托盘图标 / 托盘右键 → 显示主窗口 / 再运行一次 exe / 全局快捷键 |
+| 退出程序 | `Ctrl+Q` / 托盘右键 → 退出 / 设置里把关闭改成「退出」后点 `✕` |
+| 打开设置 | 托盘右键 → 设置 |
 
 > 移除只把条目从列表里删掉，**不会删除磁盘上的文件**。
+
+### 设置窗口
+
+托盘右键 → **设置** 打开。可配置：
+
+- **关闭按钮行为** — 关闭时最小化到托盘（后台继续运行）/ 关闭时直接退出软件
+- **全局唤起快捷键** — 默认 `Alt+Q`，点主键框后按下想要的主键，勾选 Alt/Ctrl/Shift/Win 组合；在任意程序里按下即可唤起（冲突时静默降级，不影响使用）
+- **开机自动启动** — 写入当前用户 Run 注册表项
+- **启动后最小化到托盘** — 开机/启动后不弹窗，直接后台运行
+
+设置保存在 exe 同目录的 `settings.json`（与 `config.json` 分离）。
 
 ### 窗口行为
 
@@ -66,15 +82,16 @@
 
 ### 最小化与退出
 
-**最小化收进托盘，关闭才是真退出**：
+**最小化就是最小化，关闭默认进托盘（可改）**：
 
-- 最小化（点标题栏 `—` / `Esc` / `Ctrl+W`）→ 窗口与任务栏按钮一起消失，
-  托盘出现本程序图标，程序继续后台运行（数据早已落盘，不占用 CPU）
+- 最小化（点标题栏 `—` / `Esc` / `Ctrl+W`）→ 普通最小化，窗口缩到任务栏，和其他程序一样
+- 关闭（点右上角 `✕`）→ 默认收进托盘后台运行，托盘出现本程序图标；可在设置里改成「关闭即退出」
 - 恢复 → **单击托盘图标**（窗口直接出现在前台，不会被别的窗口盖住），或托盘右键 → 显示主窗口；
   窗口收在托盘里时**再双击一次 exe** 也会把它唤到前台（不会开第二个进程）
-- 退出 → 点窗口右上角 `✕`、按 `Ctrl+Q`，或托盘右键 → 退出。退出时会保存配置并摘掉托盘图标
+- 全局快捷键 → 默认 `Alt+Q`，在任意程序里按下即可唤起（窗口在托盘时直接恢复，在前台时置顶）
+- 退出 → `Ctrl+Q`，或托盘右键 → 退出。退出时会保存配置并摘掉托盘图标
 
-托盘图标在第一次最小化时创建，之后一直保留到程序退出。
+托盘图标在第一次收进托盘时创建，之后一直保留到程序退出。
 
 ## 数据与便携性
 
@@ -83,6 +100,9 @@
 1. **exe 同目录的 `config.json`**（首选，保证便携）
 2. 如果 exe 所在目录不可写（例如放在只读介质、`Program Files`），
    自动回退到 `%APPDATA%\ShortcutManager\config.json`
+
+设置（关闭行为/快捷键/自启/启动最小化）存于独立的 **`settings.json`**，位置规则同上，
+回退到 `%APPDATA%\ShortcutManager\settings.json`，与 `config.json` 互不影响。
 
 配置采用**原子写入**（先写临时文件再替换），写入过程中断电不会损坏已有配置。
 如果配置文件被外部破坏，程序会把它备份为 `config.json.bak` 并回到默认分组，不会静默丢数据。
@@ -118,8 +138,9 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1
 
 ```
 src/
-  App.xaml(.cs)              程序入口、单实例、退出
+  App.xaml(.cs)              程序入口、单实例、退出、全局快捷键、开机自启
   MainWindow.xaml(.cs)       界面与全部交互（tab / 网格 / 右键 / 拖拽 / 重命名 / 编辑路径 / 托盘）
+  SettingsWindow.xaml(.cs)   设置窗口（关闭行为 / 快捷键 / 自启 / 启动最小化）
   PathEditDialog.xaml(.cs)   编辑路径对话框
   TrayIcon.cs                托盘图标（只借用 WinForms 的 NotifyIcon，不引入窗体）
   Converters.cs              bool -> Visibility
@@ -127,14 +148,19 @@ src/
   Models/
     ShortcutItem.cs          一个条目：路径 + 覆盖名 + 默认命名规则
     ShortcutGroup.cs         一个分组：名字 + 条目列表
+    AppSettings.cs           应用设置：关闭行为 / 快捷键 / 自启 / 启动最小化
   Services/
     ConfigStore.cs           便携式配置读写（原子写入 + 损坏容灾）
+    SettingsStore.cs         设置读写（settings.json，独立于 config.json）
+    GlobalHotkeyManager.cs   全局快捷键（RegisterHotKey + 消息钩子）
+    AutoStartService.cs      开机自启（HKCU Run 注册表）
     PathResolver.cs          便携相对路径：存储转换 + 解析
     ShellIcons.cs            Win32 Shell API 取系统图标 + 兜底图标
     Launcher.cs              双击打开 / 资源管理器定位
     ImportService.cs         路径导入 + 图标预热
   ViewModels/
     MainViewModel.cs         分组集合、选中态、增删改排序、保存
+    SettingsViewModel.cs     设置窗口状态
     ShortcutGroupViewModel.cs
     ShortcutViewModel.cs
   SelfTest.cs                --selftest：图标 / 配置 / 命名规则自检
@@ -203,7 +229,7 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1    # 生成 dist\Shor
 - **窗口行为刻意保持普通**：不置顶、不监听 `Deactivated`。
   早期版本试过「失焦自动隐藏/最小化」，需要一套抑制计数来排除右键菜单、
   对话框、输入法、拖拽等场景，既复杂又容易出现「窗口莫名消失」的观感，现已全部移除。
-  收进托盘只由用户显式的**最小化**动作触发。
+  收进托盘只由用户显式的**关闭**动作触发（且设置为「关闭进托盘」时）。
 - **拖拽排序**用 WPF 原生 `DragDrop`，按住即拖（与桌面软件惯例一致）：
   靠近目标格子左半边显示左插入线，右半边显示右插入线。
   分组标签用同一套做法（数据格式区分 `ShortcutManager.GroupTab` / `ShortcutManager.TileItem`），
@@ -211,7 +237,7 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1    # 生成 dist\Shor
   拖拽只在**实际发生位移**时才写盘（落点等于原位就不 `Save`）。
 - **托盘**用 `System.Drawing` + WinForms 的 `NotifyIcon`（`UseWindowsForms` 已开启，
   但代码里不引入任何 WinForms 窗体，也不会启动第二个消息循环）。
-  最小化时 `ShowInTaskbar = false` + `Hide()`：窗口和任务栏按钮一起消失，程序仍在运行；
+  关闭（且设为进托盘）时 `ShowInTaskbar = false` + `Hide()`：窗口和任务栏按钮一起消失，程序仍在运行；
   **单击左键**即唤出（不注册 `DoubleClick`，否则双击会连着触发两次），
   恢复时走 `App.ForceForeground`（先 `ShowWindow(SW_RESTORE)` 解掉 Win32 层的最小化，
   再 `AttachThreadInput` + `SetForegroundWindow`），所以窗口会真的还原并直接落在最前面，
@@ -220,8 +246,13 @@ powershell -ExecutionPolicy Bypass -File tools\publish.ps1    # 生成 dist\Shor
   窗口处于隐藏状态时改 `WindowState` 只改了 WPF 的属性、传不到 Win32 窗口，
   之后 `Show()` 会把它按**最小化**的样子显示出来
   （症状：点托盘像没反应，还得自己点一下任务栏按钮）。
-  关闭仍然走 `Close()`，由 `ShutdownMode.OnMainWindowClose` 结束进程，
+  退出时 `ShutdownMode.OnExplicitShutdown`，由代码在真正退出时调用 `Shutdown()`，
   退出前先 `Visible = false` 再 `Dispose()`，避免托盘里留下点一下才消失的幽灵图标。
+- **全局快捷键**用 Win32 `RegisterHotKey` 注册到主窗口的 `HwndSource` 消息钩子，
+  因此窗口收在托盘/隐藏时依然能响应。默认 `Alt+Q`；被其他程序占用时注册失败，
+  **静默降级**（软件照常运行，只是快捷键不可用），设置窗口里改快捷键时即时重新注册并提示冲突。
+- **开机自启**写 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`（无需管理员），
+  值为当前 exe 的完整路径；换位置后需在设置里重新开关一次以刷新路径。
 - **重命名冲突**：如果新名字等于默认名，会把覆盖名清空而不是存一份冗余副本，
   这样以后文件改名了显示名也会跟着变。
 - **标签栏不用原生滚动条**：分组的 `ScrollViewer` 把横向滚动条设为 `Hidden`，

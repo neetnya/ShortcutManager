@@ -16,6 +16,9 @@ internal sealed class TrayIcon : IDisposable
     /// <summary>单击托盘图标（或点菜单“显示主窗口”）时触发。</summary>
     public event Action? Activated;
 
+    /// <summary>点菜单“设置”时触发。</summary>
+    public event Action? SettingsRequested;
+
     /// <summary>点菜单“退出”时触发。</summary>
     public event Action? ExitRequested;
 
@@ -48,11 +51,15 @@ internal sealed class TrayIcon : IDisposable
             var open = new ToolStripMenuItem("显示主窗口");
             open.Click += (_, _) => Activated?.Invoke();
 
+            var settings = new ToolStripMenuItem("设置");
+            settings.Click += (_, _) => SettingsRequested?.Invoke();
+
             var exit = new ToolStripMenuItem("退出");
             exit.Click += (_, _) => ExitRequested?.Invoke();
 
             _menu = new ContextMenuStrip();
             _menu.Items.Add(open);
+            _menu.Items.Add(settings);
             _menu.Items.Add(new ToolStripSeparator());
             _menu.Items.Add(exit);
 
