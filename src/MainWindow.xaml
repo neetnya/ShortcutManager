@@ -234,6 +234,10 @@
                                 <DataTrigger Binding="{Binding IsDragTargetAfter}" Value="True">
                                     <Setter TargetName="DropLineAfter" Property="Visibility" Value="Visible" />
                                 </DataTrigger>
+                                <DataTrigger Binding="{Binding IsDropHover}" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoft}" />
+                                    <Setter Property="Foreground" Value="{StaticResource Accent}" />
+                                </DataTrigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
                     </Setter.Value>
@@ -313,6 +317,7 @@
         <KeyBinding Key="F2" Command="{x:Static local:MainWindow.RenameCommand}" />
         <KeyBinding Key="Q" Modifiers="Control" Command="{x:Static local:MainWindow.QuitCommand}" />
         <KeyBinding Key="W" Modifiers="Control" Command="{x:Static local:MainWindow.MinimizeCommand}" />
+        <KeyBinding Key="F" Modifiers="Control" Command="{x:Static local:MainWindow.FindCommand}" />
     </Window.InputBindings>
 
     <Border BorderBrush="#D8DEEA" BorderThickness="1" Background="#F4F6FA">
@@ -372,6 +377,7 @@
                             <ContextMenu>
                                 <MenuItem Header="新建分组" Click="NewGroup_Click" />
                                 <MenuItem Header="重命名分组" Click="RenameGroup_Click" />
+                                <MenuItem Header="清理失效项" Click="CleanupMissing_Click" />
                                 <Separator Style="{StaticResource MenuSeparator}" />
                                 <MenuItem Header="删除分组" Click="DeleteGroup_Click" />
                             </ContextMenu>
@@ -503,19 +509,10 @@
                     </ListBox>
 
                     <!-- 空状态 -->
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SelectedItems.Count}" Value="0">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <TextBlock Text="把文件或文件夹拖到这里" FontSize="15" Foreground="#98A2B3" TextAlignment="Center" />
-                        <TextBlock Text="也可以点下方“导入文件 / 导入文件夹”" FontSize="12" Foreground="#B4BCCA"
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
+                                Visibility="{Binding ShowEmptyState, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding EmptyTitle}" FontSize="15" Foreground="#98A2B3" TextAlignment="Center" />
+                        <TextBlock Text="{Binding EmptyHint}" FontSize="12" Foreground="#B4BCCA"
                                    TextAlignment="Center" Margin="0,6,0,0" />
                     </StackPanel>
                 </Grid>
@@ -540,8 +537,15 @@
                             ToolTip="关闭行为、全局热键、开机自启" />
                 </StackPanel>
 
-                <TextBlock Grid.Column="3" Text="{Binding StatusText}" Foreground="{StaticResource Muted}" FontSize="12"
-                           VerticalAlignment="Center" Margin="10,0" TextTrimming="CharacterEllipsis" />
+                <DockPanel Grid.Column="3" Margin="8,0" LastChildFill="True">
+                    <TextBox x:Name="FilterBox" DockPanel.Dock="Left" Width="132" Height="26"
+                             VerticalContentAlignment="Center" Padding="8,0" Margin="0,0,8,0"
+                             FontSize="12" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1"
+                             Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="按名称或路径过滤（Ctrl+F）" />
+                    <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource Muted}" FontSize="12"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                </DockPanel>
 
                 <!-- 窗口收窄到 600：这条提示要短，否则会把中间的状态文字挤没 -->
                 <TextBlock Grid.Column="4" VerticalAlignment="Center" FontSize="11" Foreground="#AAB2C0"

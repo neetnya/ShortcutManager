@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.Windows.Data;
 using ShortcutManager.Models;
 using ShortcutManager.Services;
 
@@ -24,6 +26,7 @@ public sealed class MainViewModel : ObservableObject
     private ShortcutViewModel? _selectedItem;
     private ShortcutViewModel? _clipboardItem;
     private string _statusText = string.Empty;
+    private string _filterText = string.Empty;
 
     public MainViewModel(ConfigStore store, List<ShortcutGroup> groups)
     {
@@ -38,6 +41,8 @@ public sealed class MainViewModel : ObservableObject
         }
 
         _selectedGroup = Groups.FirstOrDefault();
+        if (_selectedGroup is not null)
+            _selectedGroup.Items.CollectionChanged += OnSelectedItemsChanged;
     }
 
     public ObservableCollection<ShortcutGroupViewModel> Groups { get; } = new();
@@ -47,10 +52,17 @@ public sealed class MainViewModel : ObservableObject
         get => _selectedGroup;
         set
         {
+            if (ReferenceEquals(_selectedGroup, value)) return;
+            if (_selectedGroup is not null)
+                _selectedGroup.Items.CollectionChanged -= OnSelectedItemsChanged;
             if (Set(ref _selectedGroup, value))
             {
+                if (value is not null)
+                    value.Items.CollectionChanged += OnSelectedItemsChanged;
                 foreach (var g in Groups) g.NotifyCountChanged();
                 Raise(nameof(SelectedItems));
+                ApplyFilter();
+                RaiseEmpty();
             }
         }
     }
@@ -73,6 +85,59 @@ public sealed class MainViewModel : ObservableObject
     }
 
     public bool HasSelection => _selectedItem is not null;
+
+    public string FilterText
+    {
+        get => _filterText;
+        set
+        {
+            if (!Set(ref _filterText, value)) return;
+            ApplyFilter();
+            Raise(nameof(HasActiveFilter));
+            RaiseEmpty();
+        }
+    }
+
+    public bool HasActiveFilter => !string.IsNullOrWhiteSpace(_filterText);
+
+    public bool ShowEmptyState
+    {
+        get
+        {
+            if (SelectedItems is null || SelectedItems.Count == 0) return true;
+            if (!HasActiveFilter) return false;
+            var view = CollectionViewSource.GetDefaultView(SelectedItems);
+            return view is null || !view.Cast<object>().Any();
+        }
+    }
+
+    public string EmptyTitle => HasActiveFilter ? "没有匹配的项目" : "把文件或文件夹拖到这里";
+
+    public string EmptyHint => HasActiveFilter ? "试试别的关键字，或按 Esc 清空" : "也可以点下方“导入文件 / 导入文件夹”";
+
+    private void OnSelectedItemsChanged(object? sender, NotifyCollectionChangedEventArgs e) => RaiseEmpty();
+
+    private void ApplyFilter()
+    {
+        if (SelectedItems is null) return;
+        var view = CollectionViewSource.GetDefaultView(SelectedItems);
+        if (view is null) return;
+        var q = _filterText.Trim();
+        if (q.Length == 0) view.Filter = null;
+        else view.Filter = obj => obj is ShortcutViewModel item && ItemMatches(item, q);
+        view.Refresh();
+    }
+
+    private static bool ItemMatches(ShortcutViewModel item, string q)
+        => item.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
+           || item.Path.Contains(q, StringComparison.OrdinalIgnoreCase);
+
+    private void RaiseEmpty()
+    {
+        Raise(nameof(ShowEmptyState));
+        Raise(nameof(EmptyTitle));
+        Raise(nameof(EmptyHint));
+    }
 
     public string StatusText
     {
@@ -188,8 +253,21 @@ public sealed class MainViewModel : ObservableObject
             removed++;
         }
 
-        if (removed > 0) Save();
+        if (removed > 0)
+        {
+            Save();
+            RaiseEmpty();
+        }
         return removed;
+    }
+
+    /// <summary>移除本组中路径已不存在的条目（不动磁盘）。</summary>
+    public int RemoveMissingItems(ShortcutGroupViewModel? group = null)
+    {
+        group ??= SelectedGroup;
+        if (group is null) return 0;
+        var missing = group.Items.Where(i => i.IsMissing).ToList();
+        return RemoveItems(missing);
     }
 
     /// <summary>把条目移动到其他分组（追加到末尾）。目标已有同一路径时不改任何一组。</summary>

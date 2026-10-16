@@ -53,10 +53,7 @@ public static class ShellIcons
     public static ImageSource Get(string path, bool isDirectory)
     {
         var key = (isDirectory ? "D:" : "F:") + path.ToLowerInvariant();
-        lock (Gate)
-        {
-            if (Cache.TryGetValue(key, out var hit)) return hit;
-        }
+        if (TryGetCached(path, isDirectory, out var hit)) return hit;
 
         // 提取串行化：Shell 图标缓存对同一路径的并发首次提取会偶发返回空句柄，
         // 结果就是「图标显示成兜底图」。但不能让 UI 线程无限等锁（目标可能在慢速网络盘上），
@@ -82,6 +79,25 @@ public static class ShellIcons
         }
         return image;
     }
+
+    /// <summary>缓存命中时立刻返回，避免 UI 线程去提图标。</summary>
+    public static bool TryGetCached(string path, bool isDirectory, out ImageSource image)
+    {
+        var key = (isDirectory ? "D:" : "F:") + path.ToLowerInvariant();
+        lock (Gate)
+        {
+            if (Cache.TryGetValue(key, out var hit))
+            {
+                image = hit;
+                return true;
+            }
+        }
+        image = Fallback(isDirectory);
+        return false;
+    }
+
+    /// <summary>提取未完成时先显示的占位图（与提取失败兜底图相同，且不入缓存）。</summary>
+    public static ImageSource Placeholder(bool isDirectory) => Fallback(isDirectory);
 
     /// <summary>是不是程序自带的兜底图标（用于判断「这张图不是真实图标」）。</summary>
     public static bool IsBuiltInFallback(ImageSource? image, bool isDirectory)
@@ -169,7 +185,7 @@ public static class ShellIcons
     {
         try
         {
-            var src = System.Drawing.Icon.ExtractAssociatedIcon(path);
+            using var src = System.Drawing.Icon.ExtractAssociatedIcon(path);
             if (src is null) return null;
             var result = Imaging.CreateBitmapSourceFromHIcon(src.Handle, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
             result.Freeze();

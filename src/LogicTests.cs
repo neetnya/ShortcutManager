@@ -186,6 +186,21 @@ internal static class LogicTests
         Check("撞车时源组条目仍在", g1.Items.Count, srcCount);
         Check("撞车时目标组条目未变", g2.Items.Count, dstCount);
 
+        Section("失效清理与过滤");
+        var missingItem = new ShortcutItem { Path = @"C:\nope\gone.txt", IsDirectory = false };
+        g1.Model.Items.Add(missingItem);
+        g1.Items.Add(new ShortcutViewModel(missingItem, g1));
+        Check("失效项 Exists=false", missingItem.Exists, false);
+        var cleaned = vm.RemoveMissingItems(g1);
+        Check("清理失效项数量", cleaned, 1);
+        Check("清理后无失效项", g1.Items.All(i => !i.IsMissing), true);
+
+        vm.SelectedGroup = g1;
+        vm.FilterText = "zzzz-not-found";
+        Check("无匹配时显示空态", vm.ShowEmptyState, true);
+        vm.FilterText = "";
+        Check("清空过滤后空态随条目走", vm.ShowEmptyState, g1.Items.Count == 0);
+
         Section("设置归一化");
         var raw = new AppSettings { HotkeyModifiers = 0, HotkeyKey = 0 };
         raw.Normalize();

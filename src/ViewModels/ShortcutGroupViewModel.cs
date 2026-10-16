@@ -11,6 +11,7 @@ public sealed class ShortcutGroupViewModel : ObservableObject
     private string _renameBuffer = string.Empty;
     private bool _isDragTarget;
     private bool _isDragTargetAfter;
+    private bool _isDropHover;
 
     public ShortcutGroupViewModel(ShortcutGroup model)
     {
@@ -62,10 +63,18 @@ public sealed class ShortcutGroupViewModel : ObservableObject
         set => Set(ref _isDragTargetAfter, value);
     }
 
+    /// <summary>磁贴或文件拖到该标签上（移入/导入该组）时整颗高亮。</summary>
+    public bool IsDropHover
+    {
+        get => _isDropHover;
+        set => Set(ref _isDropHover, value);
+    }
+
     public void ClearDragMarker()
     {
         if (_isDragTarget) IsDragTarget = false;
         if (_isDragTargetAfter) IsDragTargetAfter = false;
+        if (_isDropHover) IsDropHover = false;
     }
 
     public void BeginRename()

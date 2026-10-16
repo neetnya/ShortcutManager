@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     public static readonly RoutedCommand DeleteCommand = new();
     public static readonly RoutedCommand RenameCommand = new();
     public static readonly RoutedCommand QuitCommand = new();
+    public static readonly RoutedCommand FindCommand = new();
 
     private Point _dragStart;
     private ShortcutViewModel? _dragCandidate;
@@ -45,13 +46,23 @@ public partial class MainWindow : Window
 
         CommandBindings.Add(new CommandBinding(MinimizeCommand, (_, _) => WindowState = WindowState.Minimized));
         CommandBindings.Add(new CommandBinding(NewGroupCommand, (_, _) => CreateGroup()));
-        CommandBindings.Add(new CommandBinding(DeleteCommand, (_, _) => RemoveSelectedItems()));
+        CommandBindings.Add(new CommandBinding(DeleteCommand, (_, _) =>
+        {
+            if (Keyboard.FocusedElement is TextBox) return;
+            RemoveSelectedItems();
+        }));
         CommandBinding renameBinding = new(RenameCommand, (_, _) =>
         {
+            if (Keyboard.FocusedElement is TextBox) return;
             if (ViewModel.SelectedItem is { } item) BeginItemRename(item);
         });
         CommandBindings.Add(renameBinding);
         CommandBindings.Add(new CommandBinding(QuitCommand, (_, _) => ExitApplication()));
+        CommandBindings.Add(new CommandBinding(FindCommand, (_, _) =>
+        {
+            FilterBox.Focus();
+            FilterBox.SelectAll();
+        }));
 
         Loaded += OnLoaded;
         Closing += OnClosing;
@@ -407,6 +418,12 @@ public partial class MainWindow : Window
         {
             // 优先取消正在进行的重命名，其次最小化窗口
             if (TryCancelAnyRename()) { e.Handled = true; return; }
+            if (!string.IsNullOrWhiteSpace(ViewModel.FilterText))
+            {
+                ViewModel.FilterText = string.Empty;
+                e.Handled = true;
+                return;
+            }
             WindowState = WindowState.Minimized;
             e.Handled = true;
         }
@@ -614,6 +631,25 @@ public partial class MainWindow : Window
         }));
     }
 
+    private void CleanupMissing_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedGroup is not { } group) return;
+        var missing = group.Items.Count(i => i.IsMissing);
+        if (missing <= 0)
+        {
+            ViewModel.StatusText = "没有失效项";
+            return;
+        }
+
+        var answer = MessageBox.Show(this,
+            $"分组“{group.Name}”中有 {missing} 个路径已失效，要从列表里移除吗？\n\n不会删除磁盘上的文件。",
+            "清理失效项", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (answer != MessageBoxResult.OK) return;
+
+        var n = ViewModel.RemoveMissingItems(group);
+        ViewModel.StatusText = n > 0 ? $"已清理 {n} 个失效项" : "没有失效项";
+    }
+
     private void DeleteGroup_Click(object sender, RoutedEventArgs e)
     {
         if (ViewModel.SelectedGroup is not { } group) return;
@@ -765,10 +801,17 @@ public partial class MainWindow : Window
             UpdateGroupDropMarker(e);
             e.Handled = true;
         }
+        else if (e.Data.GetDataPresent(InternalDragFormat) && _dragSource is not null)
+        {
+            e.Effects = DragDropEffects.Move;
+            UpdateGroupDropHover(e);
+            e.Handled = true;
+        }
         else if (e.Data.GetDataPresent(DataFormats.FileDrop))
         {
-            // 文件拖到标签栏：不在这里处理，冒泡给窗口级处理器（导入当前分组）
             e.Effects = DragDropEffects.Copy;
+            UpdateGroupDropHover(e);
+            e.Handled = true;
         }
         else
         {
@@ -780,14 +823,31 @@ public partial class MainWindow : Window
 
     private void TabList_Drop(object sender, DragEventArgs e)
     {
-        if (!e.Data.GetDataPresent(GroupDragFormat)) return;   // 文件拖入交给窗口级处理器
-
         ClearGroupDragMarkers();
         e.Handled = true;
 
+        var target = GroupFrom(e.OriginalSource);
+
+        if (e.Data.GetDataPresent(InternalDragFormat) && e.Data.GetData(InternalDragFormat) is ShortcutViewModel tile)
+        {
+            if (target is null) return;
+            if (ViewModel.MoveItemToGroup(tile, target))
+                ViewModel.StatusText = $"已移动到“{target.Name}”";
+            return;
+        }
+
+        if (e.Data.GetDataPresent(DataFormats.FileDrop) && e.Data.GetData(DataFormats.FileDrop) is string[] files)
+        {
+            var dest = target ?? ViewModel.SelectedGroup;
+            var n = ViewModel.Import(files, dest);
+            if (dest is not null && n > 0) ViewModel.SelectedGroup = dest;
+            ViewModel.StatusText = n > 0 ? $"已导入 {n} 项到“{dest?.Name}”" : "没有可导入的新项目";
+            return;
+        }
+
+        if (!e.Data.GetDataPresent(GroupDragFormat)) return;
         if (e.Data.GetData(GroupDragFormat) is not ShortcutGroupViewModel source) return;
 
-        var target = GroupFrom(e.OriginalSource);
         if (target is null)
         {
             if (ViewModel.MoveGroupToEnd(source))
@@ -823,6 +883,14 @@ public partial class MainWindow : Window
         _tabInsertAfter = e.GetPosition(container).X > container.ActualWidth / 2;
         if (_tabInsertAfter) target.IsDragTargetAfter = true;
         else target.IsDragTarget = true;
+    }
+
+    /// <summary>磁贴或外部文件拖到某颗标签上：整颗高亮，表示会进这一组。</summary>
+    private void UpdateGroupDropHover(DragEventArgs e)
+    {
+        var target = GroupFrom(e.OriginalSource);
+        foreach (var g in ViewModel.Groups)
+            g.IsDropHover = ReferenceEquals(g, target);
     }
 
     private void ClearGroupDragMarkers()

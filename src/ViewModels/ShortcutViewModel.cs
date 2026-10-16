@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Media;
 using ShortcutManager.Models;
 using ShortcutManager.Services;
@@ -14,6 +15,7 @@ public sealed class ShortcutViewModel : ObservableObject
     private bool _isSelected;
     private bool _isDragTarget;
     private bool _isDragTargetAfter;
+    private bool _iconLoading;
 
     public ShortcutViewModel(ShortcutItem model, ShortcutGroupViewModel owner)
     {
@@ -41,18 +43,42 @@ public sealed class ShortcutViewModel : ObservableObject
     {
         get
         {
-            if (_icon is null)
+            if (_icon is not null) return _icon;
+            if (ShellIcons.TryGetCached(_model.FullPath, _model.IsDirectory, out var cached))
             {
-                var image = ShellIcons.Get(_model.FullPath, _model.IsDirectory);
-
-                // 兜底图（提取失败）不写进缓存字段：刷新/重新加载时还能再试一次拿到真实图标
-                if (ShellIcons.IsBuiltInFallback(image, _model.IsDirectory)) return image;
-
-                _icon = image;
-                Raise();
+                _icon = cached;
+                return _icon;
             }
-            return _icon;
+
+            BeginLoadIcon();
+            return ShellIcons.Placeholder(_model.IsDirectory);
         }
+    }
+
+    private void BeginLoadIcon()
+    {
+        if (_iconLoading) return;
+        _iconLoading = true;
+        var path = _model.FullPath;
+        var isDir = _model.IsDirectory;
+        Task.Run(() =>
+        {
+            ImageSource? image = null;
+            try { image = ShellIcons.Get(path, isDir); }
+            catch { /* ignore */ }
+
+            void Apply()
+            {
+                _iconLoading = false;
+                if (image is not null && !ShellIcons.IsBuiltInFallback(image, isDir))
+                    _icon = image;
+                Raise(nameof(Icon));
+            }
+
+            var disp = Application.Current?.Dispatcher;
+            if (disp is not null) disp.BeginInvoke(Apply);
+            else Apply();
+        });
     }
 
     public string Tooltip
@@ -129,6 +155,7 @@ public sealed class ShortcutViewModel : ObservableObject
     public void Refresh()
     {
         _icon = null;
+        _iconLoading = false;
         Raise(nameof(Icon));
         Raise(nameof(Path));
         Raise(nameof(StoredPath));
