@@ -20,6 +20,19 @@ public sealed class AppSettings
     /// <summary>启动后最小化到托盘（后台运行），不弹出主窗口。</summary>
     public bool StartMinimized { get; set; } = false;
 
+    /// <summary>主窗口左边（DIP）。空表示仍用屏幕居中。</summary>
+    public double? WindowLeft { get; set; }
+
+    /// <summary>主窗口顶边（DIP）。空表示仍用屏幕居中。</summary>
+    public double? WindowTop { get; set; }
+
+    public double WindowWidth { get; set; } = 600;
+
+    public double WindowHeight { get; set; } = 580;
+
+    /// <summary>是否已经提示过「关闭进托盘」。只提示一次。</summary>
+    public bool HasShownTrayHint { get; set; }
+
     /// <summary>
     /// 归一化非法值。无修饰键的全局热键会抢走主键，这里回退到 Alt。
     /// </summary>

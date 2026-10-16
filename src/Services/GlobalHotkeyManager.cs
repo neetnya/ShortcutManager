@@ -29,6 +29,37 @@ public sealed class GlobalHotkeyManager : IDisposable
     /// <summary>是否成功注册。false 时快捷键不可用（被占用或注册失败），软件其余功能照常。</summary>
     public bool IsRegistered => _registered;
 
+    /// <summary>把修饰键 + 虚拟键码格式化成「Alt+Q」这类文案，给状态栏 / 托盘提示用。</summary>
+    public static string Format(int modifiers, int vk)
+    {
+        var parts = new List<string>();
+        if ((modifiers & (int)HotkeyModifiers.Ctrl) != 0) parts.Add("Ctrl");
+        if ((modifiers & (int)HotkeyModifiers.Alt) != 0) parts.Add("Alt");
+        if ((modifiers & (int)HotkeyModifiers.Shift) != 0) parts.Add("Shift");
+        if ((modifiers & (int)HotkeyModifiers.Win) != 0) parts.Add("Win");
+        parts.Add(VkName(vk));
+        return string.Join("+", parts);
+    }
+
+    private static string VkName(int vk) => vk switch
+    {
+        >= 0x30 and <= 0x39 => ((char)vk).ToString(),
+        >= 0x41 and <= 0x5A => ((char)vk).ToString(),
+        0x20 => "Space",
+        0x0D => "Enter",
+        0x1B => "Esc",
+        0x09 => "Tab",
+        0x08 => "Backspace",
+        0x2E => "Delete",
+        0x2D => "Insert",
+        0x24 => "Home",
+        0x23 => "End",
+        0x21 => "PageUp",
+        0x22 => "PageDown",
+        >= 0x70 and <= 0x7B => "F" + (vk - 0x6F),
+        _ => "Key",
+    };
+
     /// <summary>挂到指定窗口的消息循环上，并注册快捷键。</summary>
     public void Attach(System.Windows.Window window, AppSettings settings)
     {

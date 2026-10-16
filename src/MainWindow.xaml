@@ -139,6 +139,34 @@
                 </Setter>
             </Style>
 
+            <!-- ===== 标签栏小按钮（翻页箭头 / 新建分组）===== -->
+            <Style x:Key="TabIconButton" TargetType="Button">
+                <Setter Property="Width" Value="22" />
+                <Setter Property="Height" Value="22" />
+                <Setter Property="Margin" Value="1,0" />
+                <Setter Property="Foreground" Value="#8A93A6" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}" />
+                                    <Setter Property="Foreground" Value="{StaticResource Accent}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Pressed}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!-- ===== 标签栏翻页箭头（替代原生横向滚动条）===== -->
             <Style x:Key="TabArrow" TargetType="RepeatButton">
                 <Setter Property="Width" Value="22" />
@@ -300,6 +328,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <!-- 原生横向滚动条太丑：隐藏它，改用右侧的两个三角箭头翻页 -->
@@ -364,6 +393,13 @@
                               Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RepeatButton}}" />
                     </RepeatButton>
                 </StackPanel>
+
+                <Button Grid.Column="2" Style="{StaticResource TabIconButton}" Margin="4,0,0,0"
+                        Click="NewGroup_Click" ToolTip="新建分组 (Ctrl+T)" VerticalAlignment="Center">
+                    <Path Data="M 5,1 L 5,9 M 1,5 L 9,5"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                </Button>
             </Grid>
 
             <!-- ============ 中间：3 列网格 ============ -->

@@ -191,6 +191,15 @@ internal static class LogicTests
         raw.Normalize();
         Check("无修饰键回退 Alt", raw.HotkeyModifiers, (int)HotkeyModifiers.Alt);
         Check("无效主键回退 Q", raw.HotkeyKey, 0x51);
+        Check("热键文案 Alt+Q", GlobalHotkeyManager.Format((int)HotkeyModifiers.Alt, 0x51), "Alt+Q");
+
+        var geom = new AppSettings { WindowLeft = 12, WindowTop = 34, HasShownTrayHint = true };
+        var svm = new SettingsViewModel(new SettingsStore(), geom);
+        var copy = new AppSettings();
+        svm.ApplyTo(copy);
+        Check("设置页不丢窗口左", copy.WindowLeft, 12d);
+        Check("设置页不丢窗口顶", copy.WindowTop, 34d);
+        Check("设置页不丢托盘提示标记", copy.HasShownTrayHint, true);
 
         // 移除
         Section("移除条目");

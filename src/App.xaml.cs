@@ -84,12 +84,13 @@ public partial class App : Application
     }
 
     /// <summary>只给自动化/调试用的开关，启动时不做单实例拦阻。</summary>
-    private static readonly string[] AutomationSwitches =
+    internal static readonly string[] AutomationSwitches =
     {
         "--traytest", "--uitest", "--shot", "--import", "--diag", "--hotkeytest",
     };
 
-    private static bool IsAutomationRun
+    /// <summary>自动化入口：测试里不要写窗口位置、也不要弹托盘气泡。</summary>
+    internal static bool IsAutomationRun
     {
         get
         {
@@ -153,6 +154,12 @@ public partial class App : Application
         _hotkeys = new GlobalHotkeyManager();
         _hotkeys.Activated += OnHotkeyActivated;
         _hotkeys.Attach(_window, _settings);
+
+        if (!IsAutomationRun && !_hotkeys.IsRegistered)
+        {
+            var name = GlobalHotkeyManager.Format(_settings.HotkeyModifiers, _settings.HotkeyKey);
+            vm.StatusText = $"全局热键 {name} 被占用，可在设置里更换";
+        }
 
         // 启动后预热所有分组的图标缓存（后台线程，不阻塞首屏）
         Task.Run(() =>

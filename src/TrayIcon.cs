@@ -35,6 +35,20 @@ internal sealed class TrayIcon : IDisposable
         try { _icon.Visible = true; } catch { /* ignore */ }
     }
 
+    /// <summary>第一次收进托盘时的气泡说明。失败则静默（策略禁用通知时不影响使用）。</summary>
+    public void ShowInfoBalloon(string title, string text)
+    {
+        if (_icon is null) return;
+        try
+        {
+            _icon.BalloonTipTitle = title;
+            _icon.BalloonTipText = text;
+            _icon.BalloonTipIcon = ToolTipIcon.Info;
+            _icon.ShowBalloonTip(5000);
+        }
+        catch { /* ignore */ }
+    }
+
     /// <summary>临时隐藏（退出前用；也可再次 Show 回来）。</summary>
     public void Hide()
     {

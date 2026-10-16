@@ -57,6 +57,9 @@ public partial class MainWindow : Window
         Closing += OnClosing;
         StateChanged += OnStateChanged;
         PreviewKeyDown += OnPreviewKeyDown;
+        LocationChanged += (_, _) => ScheduleGeometrySave();
+        SizeChanged += (_, _) => ScheduleGeometrySave();
+        ApplySavedGeometry();
         AllowDrop = true;
         Drop += Window_Drop;
         DragOver += Window_DragOver;
@@ -79,6 +82,8 @@ public partial class MainWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        EnsureOnScreen();
+
         // 预热当前分组图标，避免首屏图标逐个跳出
         if (ViewModel.SelectedGroup is { } group)
             ViewModel.WarmIcons(group);
@@ -354,6 +359,7 @@ public partial class MainWindow : Window
         // 真正退出：保存配置、摘掉托盘图标
         if (_exiting)
         {
+            SaveGeometryNow();
             ViewModel.Save();
             _tray?.Dispose();
             _tray = null;
@@ -445,11 +451,13 @@ public partial class MainWindow : Window
     {
         if (_inTray || _exiting) return;
 
+        SaveGeometryNow();
         _inTray = true;
         Tray.Show();
         ShowInTaskbar = false;
         Hide();
         ViewModel.StatusText = "";
+        MaybeShowTrayHint();
         TrayTestLog($"minimized: visible={IsVisible} inTaskbar={ShowInTaskbar} " +
                     $"state={WindowState} tray={_tray?.IsVisible == true}");
     }
@@ -495,6 +503,76 @@ public partial class MainWindow : Window
     }
 
     private void Settings_Click(object sender, RoutedEventArgs e) => OpenSettings();
+
+    // ==================================================================
+    //  窗口位置 / 第一次进托盘提示
+    // ==================================================================
+
+    private DispatcherTimer? _geometrySaveTimer;
+
+    private void ApplySavedGeometry()
+    {
+        if (_settings.WindowWidth >= MinWidth) Width = _settings.WindowWidth;
+        if (_settings.WindowHeight >= MinHeight) Height = _settings.WindowHeight;
+        if (_settings.WindowLeft is double left && _settings.WindowTop is double top)
+        {
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Left = left;
+            Top = top;
+        }
+    }
+
+    /// <summary>显示器被拔掉后，窗口可能落在虚拟桌面外，拉回可见区域。</summary>
+    private void EnsureOnScreen()
+    {
+        var vsL = SystemParameters.VirtualScreenLeft;
+        var vsT = SystemParameters.VirtualScreenTop;
+        var vsR = vsL + SystemParameters.VirtualScreenWidth;
+        var vsB = vsT + SystemParameters.VirtualScreenHeight;
+        if (Left + Width < vsL + 80 || Left > vsR - 80 || Top + 32 < vsT || Top > vsB - 40)
+        {
+            Left = vsL + Math.Max(0, (SystemParameters.VirtualScreenWidth - Width) / 2);
+            Top = vsT + Math.Max(0, (SystemParameters.VirtualScreenHeight - Height) / 2);
+        }
+    }
+
+    private void ScheduleGeometrySave()
+    {
+        if (App.IsAutomationRun || _inTray || _exiting) return;
+        if (WindowState != WindowState.Normal) return;
+        _geometrySaveTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _geometrySaveTimer.Tick -= OnGeometrySaveTick;
+        _geometrySaveTimer.Tick += OnGeometrySaveTick;
+        _geometrySaveTimer.Stop();
+        _geometrySaveTimer.Start();
+    }
+
+    private void OnGeometrySaveTick(object? sender, EventArgs e)
+    {
+        _geometrySaveTimer?.Stop();
+        SaveGeometryNow();
+    }
+
+    private void SaveGeometryNow()
+    {
+        if (App.IsAutomationRun || WindowState != WindowState.Normal) return;
+        if (Width < MinWidth || Height < MinHeight) return;
+
+        _settings.WindowLeft = Left;
+        _settings.WindowTop = Top;
+        _settings.WindowWidth = Width;
+        _settings.WindowHeight = Height;
+        try { _settingsStore.Save(_settings); } catch { /* ignore */ }
+    }
+
+    private void MaybeShowTrayHint()
+    {
+        if (App.IsAutomationRun || _settings.HasShownTrayHint) return;
+        var hotkey = GlobalHotkeyManager.Format(_settings.HotkeyModifiers, _settings.HotkeyKey);
+        Tray.ShowInfoBalloon("快捷方式管理器", $"已在托盘运行。单击图标或按 {hotkey} 可唤起。");
+        _settings.HasShownTrayHint = true;
+        try { _settingsStore.Save(_settings); } catch { /* ignore */ }
+    }
 
     /// <summary>开发验证用：--traytest 把最小化/恢复/关闭的每一步状态写入 tray-test.log。</summary>
     private List<string>? _trayLog;

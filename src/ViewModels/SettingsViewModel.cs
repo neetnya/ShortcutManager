@@ -7,6 +7,7 @@ namespace ShortcutManager.ViewModels;
 public sealed class SettingsViewModel : ObservableObject
 {
     private readonly SettingsStore _store;
+    private readonly AppSettings _source;
 
     private bool _closeToTray;
     private bool _autoStart;
@@ -18,6 +19,7 @@ public sealed class SettingsViewModel : ObservableObject
     {
         _store = store;
         settings.Normalize();
+        _source = settings;
         _closeToTray = settings.CloseToTray;
         _autoStart = settings.AutoStart;
         _startMinimized = settings.StartMinimized;
@@ -74,7 +76,7 @@ public sealed class SettingsViewModel : ObservableObject
         set { if (Set(ref _key, value)) Save(); }
     }
 
-    /// <summary>把当前快捷键字段同步回 AppSettings（供外部读取后重新注册）。</summary>
+    /// <summary>把界面字段写回目标对象；窗口位置、托盘提示等未在设置页展示的字段保持原样。</summary>
     public void ApplyTo(AppSettings settings)
     {
         settings.CloseToTray = _closeToTray;
@@ -82,6 +84,19 @@ public sealed class SettingsViewModel : ObservableObject
         settings.StartMinimized = _startMinimized;
         settings.HotkeyModifiers = _modifiers;
         settings.HotkeyKey = _key;
+        if (ReferenceEquals(settings, _source)) return;
+        settings.WindowLeft = _source.WindowLeft;
+        settings.WindowTop = _source.WindowTop;
+        settings.WindowWidth = _source.WindowWidth;
+        settings.WindowHeight = _source.WindowHeight;
+        settings.HasShownTrayHint = _source.HasShownTrayHint;
+    }
+
+    /// <summary>写回并返回正在使用的那份设置（主窗口和 App 共用同一对象）。</summary>
+    public AppSettings Commit()
+    {
+        ApplyTo(_source);
+        return _source;
     }
 
     private string _statusText = string.Empty;
@@ -93,9 +108,8 @@ public sealed class SettingsViewModel : ObservableObject
 
     private void Save()
     {
-        var settings = new AppSettings();
-        ApplyTo(settings);
-        try { _store.Save(settings); }
+        ApplyTo(_source);
+        try { _store.Save(_source); }
         catch { StatusText = "设置保存失败"; }
     }
 }

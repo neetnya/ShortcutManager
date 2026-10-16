@@ -123,22 +123,12 @@ public partial class SettingsWindow : Window
 
     private void Done_Click(object sender, RoutedEventArgs e)
     {
-        // 关闭前确保快捷键以最终值重新注册（失败也保持静默降级）
-        _vm.ApplyTo(_appliedSettings);
+        _vm.Commit();
         Close();
     }
 
-    private AppSettings _appliedSettings = new();
-
-    /// <summary>给 App 层读取最终生效的设置（保存后返回）。</summary>
-    public AppSettings AppliedSettings
-    {
-        get
-        {
-            _vm.ApplyTo(_appliedSettings);
-            return _appliedSettings;
-        }
-    }
+    /// <summary>给 App 层读取最终生效的设置（与主窗口共用同一对象，避免覆盖窗口位置等字段）。</summary>
+    public AppSettings AppliedSettings => _vm.Commit();
 
     // ---- 键码/字符串转换 ----
 
