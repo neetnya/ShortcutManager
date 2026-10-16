@@ -27,6 +27,7 @@ public sealed class MainViewModel : ObservableObject
     private ShortcutViewModel? _clipboardItem;
     private string _statusText = string.Empty;
     private string _filterText = string.Empty;
+    private RemovedSlice? _undoRemove;
 
     public MainViewModel(ConfigStore store, List<ShortcutGroup> groups)
     {
@@ -241,8 +242,15 @@ public sealed class MainViewModel : ObservableObject
     /// </summary>
     public int RemoveItems(IEnumerable<ShortcutViewModel> items)
     {
+        var list = items.Distinct().ToList();
+        var snapshot = list
+            .Select(i => (item: i, index: i.Owner.Items.IndexOf(i)))
+            .Where(x => x.index >= 0)
+            .OrderBy(x => x.index)
+            .ToList();
+
         var removed = 0;
-        foreach (var item in items.Distinct().ToList())
+        foreach (var item in list)
         {
             var group = item.Owner;
             if (!group.Items.Remove(item)) continue;
@@ -255,10 +263,51 @@ public sealed class MainViewModel : ObservableObject
 
         if (removed > 0)
         {
+            if (snapshot.Count > 0)
+            {
+                _undoRemove = new RemovedSlice
+                {
+                    Group = snapshot[0].item.Owner,
+                    Index = snapshot[0].index,
+                    Models = snapshot.Select(x => x.item.Model).ToList(),
+                };
+            }
             Save();
             RaiseEmpty();
         }
         return removed;
+    }
+
+    public bool CanUndoRemove
+        => _undoRemove is not null
+           && DateTime.UtcNow - _undoRemove.At < TimeSpan.FromSeconds(15)
+           && Groups.Contains(_undoRemove.Group);
+
+    /// <summary>撤销上一次移除，把条目插回原来的分组和大致位置。</summary>
+    public bool UndoLastRemove()
+    {
+        if (!CanUndoRemove || _undoRemove is null) return false;
+        var slice = _undoRemove;
+        _undoRemove = null;
+
+        var insertAt = Math.Clamp(slice.Index, 0, slice.Group.Items.Count);
+        var restored = 0;
+        for (var i = 0; i < slice.Models.Count; i++)
+        {
+            var model = slice.Models[i];
+            if (slice.Group.Model.Items.Any(x => x.PathKey == model.PathKey)) continue;
+            var at = Math.Min(insertAt + i, slice.Group.Items.Count);
+            slice.Group.Model.Items.Insert(at, model);
+            slice.Group.Items.Insert(at, new ShortcutViewModel(model, slice.Group));
+            restored++;
+        }
+
+        if (restored == 0) return false;
+        slice.Group.NotifyCountChanged();
+        Save();
+        RaiseEmpty();
+        StatusText = restored == 1 ? "已撤销移除" : $"已撤销移除 {restored} 项";
+        return true;
     }
 
     /// <summary>移除本组中路径已不存在的条目（不动磁盘）。</summary>
@@ -271,7 +320,7 @@ public sealed class MainViewModel : ObservableObject
     }
 
     /// <summary>把条目移动到其他分组（追加到末尾）。目标已有同一路径时不改任何一组。</summary>
-    public bool MoveItemToGroup(ShortcutViewModel item, ShortcutGroupViewModel target)
+    public bool MoveItemToGroup(ShortcutViewModel item, ShortcutGroupViewModel target, bool save = true)
     {
         if (ReferenceEquals(item.Owner, target)) return false;
 
@@ -292,8 +341,34 @@ public sealed class MainViewModel : ObservableObject
         target.NotifyCountChanged();
 
         if (ReferenceEquals(SelectedItem, item)) SelectedItem = null;
-        Save();
+        if (save) Save();
         return true;
+    }
+
+    /// <summary>批量发送到其他分组；目标已有的跳过，其余一次写盘。</summary>
+    public int MoveItemsToGroup(IEnumerable<ShortcutViewModel> items, ShortcutGroupViewModel target)
+    {
+        var moved = 0;
+        var skipped = 0;
+        foreach (var item in items.Distinct().ToList())
+        {
+            if (ReferenceEquals(item.Owner, target)) continue;
+            if (target.Model.Items.Any(i => i.PathKey == item.Model.PathKey))
+            {
+                skipped++;
+                continue;
+            }
+            if (MoveItemToGroup(item, target, save: false)) moved++;
+        }
+
+        if (moved > 0) Save();
+        if (moved > 0 && skipped > 0)
+            StatusText = $"已移动 {moved} 项到“{target.Name}”，{skipped} 项已存在";
+        else if (moved > 0)
+            StatusText = moved == 1 ? $"已移动到“{target.Name}”" : $"已移动 {moved} 项到“{target.Name}”";
+        else if (skipped > 0)
+            StatusText = $"“{target.Name}”中已存在所选项目";
+        return moved;
     }
 
     /// <summary>组内排序：把 source 移动到 target 的前/后。</summary>
@@ -316,6 +391,13 @@ public sealed class MainViewModel : ObservableObject
         if (insertAfter) to++;
 
         to = Math.Clamp(to, 0, items.Count);
+        if (to == from)
+        {
+            items.Insert(from, source);
+            models.Insert(from, source.Model);
+            return;
+        }
+
         items.Insert(to, source);
         models.Insert(to, source.Model);
 
@@ -405,4 +487,12 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>调试用：最近一次保存的错误（无错误为空）。</summary>
     public string LastSaveError { get; private set; } = string.Empty;
+
+    private sealed class RemovedSlice
+    {
+        public required ShortcutGroupViewModel Group { get; init; }
+        public required int Index { get; init; }
+        public required List<ShortcutItem> Models { get; init; }
+        public DateTime At { get; init; } = DateTime.UtcNow;
+    }
 }

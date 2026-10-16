@@ -28,6 +28,7 @@ public static class Launcher
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = fullPath,
+                    Arguments = item.Arguments ?? string.Empty,
                     UseShellExecute = true,
                     WorkingDirectory = Path.GetDirectoryName(fullPath) ?? string.Empty,
                 });

@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     public static readonly RoutedCommand RenameCommand = new();
     public static readonly RoutedCommand QuitCommand = new();
     public static readonly RoutedCommand FindCommand = new();
+    public static readonly RoutedCommand UndoCommand = new();
 
     private Point _dragStart;
     private ShortcutViewModel? _dragCandidate;
@@ -62,6 +63,12 @@ public partial class MainWindow : Window
         {
             FilterBox.Focus();
             FilterBox.SelectAll();
+        }));
+        CommandBindings.Add(new CommandBinding(UndoCommand, (_, _) =>
+        {
+            if (Keyboard.FocusedElement is TextBox) return;
+            if (ViewModel.UndoLastRemove())
+                return;
         }));
 
         Loaded += OnLoaded;
@@ -831,8 +838,9 @@ public partial class MainWindow : Window
         if (e.Data.GetDataPresent(InternalDragFormat) && e.Data.GetData(InternalDragFormat) is ShortcutViewModel tile)
         {
             if (target is null) return;
-            if (ViewModel.MoveItemToGroup(tile, target))
-                ViewModel.StatusText = $"已移动到“{target.Name}”";
+            var batch = SelectedTiles();
+            if (!batch.Contains(tile)) batch = new List<ShortcutViewModel> { tile };
+            ViewModel.MoveItemsToGroup(batch, target);
             return;
         }
 
@@ -1119,14 +1127,14 @@ public partial class MainWindow : Window
         var count = selected.Count;
         _menuTarget = ViewModel.SelectedItem ?? selected.FirstOrDefault();
         var has = _menuTarget is not null;
-        var single = count == 1;          // 多选时只有“移除/复制路径”这类逐项操作有意义
+        var single = count == 1;          // 多选时只有“移除/复制路径/发送到”这类逐项或批量操作有意义
         var any = count > 0;
 
         OpenMenu.IsEnabled = single;
         RevealMenu.IsEnabled = has;
         RenameMenu.IsEnabled = single && _menuTarget is { IsRenaming: false };
         EditPathMenu.IsEnabled = single;
-        SendToMenu.IsEnabled = single;
+        SendToMenu.IsEnabled = any;
         RemoveMenu.IsEnabled = any;
         OpenParentMenu.IsEnabled = has;
         CopyPathMenu.IsEnabled = any;
@@ -1171,11 +1179,13 @@ public partial class MainWindow : Window
     }
 
     /// <summary>右键菜单里的“移除”入口。</summary>
-    private void SendToGroup_Click(object sender, RoutedEventArgs e)    {
+    private void SendToGroup_Click(object sender, RoutedEventArgs e)
+    {
         if (sender is not MenuItem { Tag: ShortcutGroupViewModel group }) return;
-        if (_menuTarget is null) return;
-        if (ViewModel.MoveItemToGroup(_menuTarget, group))
-            ViewModel.StatusText = $"已移动到“{group.Name}”";
+        var batch = SelectedTiles();
+        if (batch.Count == 0 && _menuTarget is not null) batch.Add(_menuTarget);
+        if (batch.Count == 0) return;
+        ViewModel.MoveItemsToGroup(batch, group);
     }
 
     private void Open_Click(object sender, RoutedEventArgs e)
@@ -1276,8 +1286,8 @@ public partial class MainWindow : Window
         if (removed <= 0) return;
 
         ViewModel.StatusText = removed == 1
-            ? $"已移除 {name}（磁盘文件未删除）"
-            : $"已移除 {removed} 项（磁盘文件未删除）";
+            ? $"已移除 {name}（Ctrl+Z 撤销）"
+            : $"已移除 {removed} 项（Ctrl+Z 撤销）";
     }
 
     private void BeginItemRename(ShortcutViewModel item)

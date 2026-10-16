@@ -234,6 +234,9 @@ internal static class LogicTests
         Check("批量移除后条目数", g1.Items.Count, batchBefore - 2);
         Check("批量移除后模型同步", g1.Model.Items.Any(i => batchPaths.Contains(i.Path)), false);
         Check("批量移除不动磁盘文件", batchPaths.All(p => File.Exists(p) || Directory.Exists(p)), true);
+        var afterBatch = g1.Items.Count;
+        Check("撤销批量移除", vm.UndoLastRemove(), true);
+        Check("撤销后数量恢复", g1.Items.Count, afterBatch + 2);
         Check("重复批量移除返回 0", vm.RemoveItems(batch), 0);
 
         // 程序目录内的文件导入后存为相对路径
@@ -244,6 +247,31 @@ internal static class LogicTests
         Check("相对路径解析为完整路径", g1.Items[^1].Path, Path.GetFullPath(localFile));
         Check("相对路径重复导入被忽略", vm.Import(new[] { localFile }, g1), 0);
         Check("相对路径条目默认名", g1.Items[^1].Name, "sm-rel-test");
+
+        Section("多选发送与快捷方式");
+        vm.AddGroup();
+        var gSend = vm.Groups[^1];
+        var sendN = Math.Min(2, g1.Items.Count);
+        var sendBatch = g1.Items.Take(sendN).ToList();
+        var g1BeforeSend = g1.Items.Count;
+        Check("批量发送数量", vm.MoveItemsToGroup(sendBatch, gSend), sendN);
+        Check("源组减少", g1.Items.Count, g1BeforeSend - sendN);
+        Check("目标组增加", gSend.Items.Count, sendN);
+
+        var lnkTarget = Path.Combine(sandbox, "lnk-target.txt");
+        File.WriteAllText(lnkTarget, "t");
+        var lnkPath = Path.Combine(sandbox, "to-target.lnk");
+        var lnkOk = TryCreateShortcut(lnkPath, lnkTarget, "--ok");
+        if (lnkOk)
+        {
+            Check("导入 lnk", vm.Import(new[] { lnkPath }, gSend), 1);
+            Check("lnk 存成目标路径", gSend.Items[^1].Path, Path.GetFullPath(lnkTarget));
+            Check("lnk 参数被保留", gSend.Items[^1].Model.Arguments, "--ok");
+        }
+        else
+        {
+            Log.Add("  (skip lnk: WScript.Shell 不可用)");
+        }
 
         // 分组增删
         Section("分组增删");
@@ -383,6 +411,25 @@ internal static class LogicTests
         try { Directory.Delete(localDir, true); } catch { /* ignore */ }
 
         return _fail == 0 ? 0 : 1;
+    }
+
+    private static bool TryCreateShortcut(string lnkPath, string target, string arguments)
+    {
+        try
+        {
+            var type = Type.GetTypeFromProgID("WScript.Shell");
+            if (type is null) return false;
+            dynamic shell = Activator.CreateInstance(type)!;
+            dynamic sc = shell.CreateShortcut(lnkPath);
+            sc.TargetPath = target;
+            sc.Arguments = arguments;
+            sc.Save();
+            return File.Exists(lnkPath);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void Section(string name)

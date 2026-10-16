@@ -48,11 +48,12 @@ public static class ShellIcons
 
     private static ImageSource? _fallbackFolder;
     private static ImageSource? _fallbackFile;
+    private static uint _iconPixelSize;
 
     /// <summary>同步获取图标（供后台线程预热使用）。</summary>
     public static ImageSource Get(string path, bool isDirectory)
     {
-        var key = (isDirectory ? "D:" : "F:") + path.ToLowerInvariant();
+        var key = CacheKey(path, isDirectory);
         if (TryGetCached(path, isDirectory, out var hit)) return hit;
 
         // 提取串行化：Shell 图标缓存对同一路径的并发首次提取会偶发返回空句柄，
@@ -83,7 +84,7 @@ public static class ShellIcons
     /// <summary>缓存命中时立刻返回，避免 UI 线程去提图标。</summary>
     public static bool TryGetCached(string path, bool isDirectory, out ImageSource image)
     {
-        var key = (isDirectory ? "D:" : "F:") + path.ToLowerInvariant();
+        var key = CacheKey(path, isDirectory);
         lock (Gate)
         {
             if (Cache.TryGetValue(key, out var hit))
@@ -103,8 +104,34 @@ public static class ShellIcons
     public static bool IsBuiltInFallback(ImageSource? image, bool isDirectory)
         => image is not null && ReferenceEquals(image, Fallback(isDirectory));
 
+    private static string CacheKey(string path, bool isDirectory)
+        => $"{(isDirectory ? "D" : "F")}:{IconPixelSize()}:{path.ToLowerInvariant()}";
+
+    /// <summary>按当前窗口 DPI 取图标像素边长，未创建窗口时用 48。</summary>
+    private static uint IconPixelSize()
+    {
+        if (_iconPixelSize != 0) return _iconPixelSize;
+        try
+        {
+            var win = Application.Current?.MainWindow;
+            if (win is not null)
+            {
+                var dip = VisualTreeHelper.GetDpi(win).PixelsPerDip;
+                _iconPixelSize = (uint)Math.Clamp((int)Math.Round(48 * dip), 32, 256);
+                return _iconPixelSize;
+            }
+        }
+        catch { /* ignore */ }
+
+        _iconPixelSize = 48;
+        return _iconPixelSize;
+    }
+
     private static ImageSource? Load(string path, bool isDirectory)
     {
+        var sized = ExtractAtDpi(path);
+        if (sized is not null) return sized;
+
         var info = new SHFILEINFO();
         uint flags = SHGFI_ICON | SHGFI_LARGEICON;
 
@@ -178,6 +205,38 @@ public static class ShellIcons
         sb.AppendLine($"final      : {final.Width}x{final.Height} {final.GetType().Name}"
                       + (IsBuiltInFallback(final, isDirectory) ? "  <= 兜底图标（提取失败）" : ""));
         return sb.ToString();
+    }
+
+    /// <summary>按 DPI 从文件抽更大的图标。关联图标/文件夹会失败，再走 SHGetFileInfo。</summary>
+    private static ImageSource? ExtractAtDpi(string path)
+    {
+        try
+        {
+            var size = IconPixelSize();
+            var packed = size | (size << 16);
+            var hr = SHDefExtractIcon(path, 0, 0, out var large, out var small, packed);
+            if (hr != 0 || large == IntPtr.Zero)
+            {
+                if (small != IntPtr.Zero) DestroyIcon(small);
+                return null;
+            }
+
+            try
+            {
+                var src = Imaging.CreateBitmapSourceFromHIcon(large, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+                src.Freeze();
+                return src;
+            }
+            finally
+            {
+                DestroyIcon(large);
+                if (small != IntPtr.Zero) DestroyIcon(small);
+            }
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>直接从文件的图标资源里提取（绕开 Shell 缓存/类型关联），失败返回 null。</summary>

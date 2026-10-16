@@ -25,10 +25,25 @@ public static class ImportService
             bool isFile = File.Exists(path);
             if (!isDir && !isFile) continue;
 
+            var arguments = string.Empty;
+            if (!isDir && ShellLink.TryResolve(path, out var resolved, out var args)
+                && (File.Exists(resolved) || Directory.Exists(resolved)))
+            {
+                path = resolved;
+                arguments = args;
+                isDir = Directory.Exists(resolved);
+            }
+
             var key = ShortcutItem.NormalizePath(path);
             if (!existing.Add(key)) continue;
 
-            result.Add(new ShortcutItem { Path = PathResolver.ToStoragePath(path), DisplayName = string.Empty, IsDirectory = isDir });
+            result.Add(new ShortcutItem
+            {
+                Path = PathResolver.ToStoragePath(path),
+                DisplayName = string.Empty,
+                IsDirectory = isDir,
+                Arguments = arguments,
+            });
         }
 
         return result;

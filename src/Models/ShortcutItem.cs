@@ -19,6 +19,9 @@ public sealed class ShortcutItem
     /// <summary>显示名。为空时回退到文件名（不含扩展名）。</summary>
     public string DisplayName { get; set; } = string.Empty;
 
+    /// <summary>打开文件时附加的命令行参数（从 .lnk 解析而来，可为空）。</summary>
+    public string Arguments { get; set; } = string.Empty;
+
     /// <summary>磁盘上缓存的图标 png 文件名（仅缓存时使用），可为空。</summary>
     public string? CachedIcon { get; set; }
 
@@ -61,5 +64,5 @@ public sealed class ShortcutItem
         return p.ToLowerInvariant();
     }
 
-    public ShortcutItem Clone() => new() { Path = Path, DisplayName = DisplayName, CachedIcon = CachedIcon };
+    public ShortcutItem Clone() => new() { Path = Path, DisplayName = DisplayName, CachedIcon = CachedIcon, Arguments = Arguments };
 }

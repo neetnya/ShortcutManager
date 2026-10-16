@@ -318,6 +318,7 @@
         <KeyBinding Key="Q" Modifiers="Control" Command="{x:Static local:MainWindow.QuitCommand}" />
         <KeyBinding Key="W" Modifiers="Control" Command="{x:Static local:MainWindow.MinimizeCommand}" />
         <KeyBinding Key="F" Modifiers="Control" Command="{x:Static local:MainWindow.FindCommand}" />
+        <KeyBinding Key="Z" Modifiers="Control" Command="{x:Static local:MainWindow.UndoCommand}" />
     </Window.InputBindings>
 
     <Border BorderBrush="#D8DEEA" BorderThickness="1" Background="#F4F6FA">
