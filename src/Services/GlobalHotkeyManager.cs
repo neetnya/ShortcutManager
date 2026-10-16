@@ -58,7 +58,9 @@ public sealed class GlobalHotkeyManager : IDisposable
     private bool Register(uint modifiers, uint vk)
     {
         Unregister();
-        if (_hwnd == IntPtr.Zero || vk == 0) { _registered = false; return false; }
+        // 不允许注册没有修饰键的单键：否则会在全系统抢走 Q / F1 等。
+        var hasModifier = (modifiers & (uint)(HotkeyModifiers.Alt | HotkeyModifiers.Ctrl | HotkeyModifiers.Shift | HotkeyModifiers.Win)) != 0;
+        if (_hwnd == IntPtr.Zero || vk == 0 || !hasModifier) { _registered = false; return false; }
 
         _registered = RegisterHotKey(_hwnd, HotkeyId, modifiers, vk);
         return _registered;

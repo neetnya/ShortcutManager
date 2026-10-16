@@ -192,27 +192,26 @@ public sealed class MainViewModel : ObservableObject
         return removed;
     }
 
-    /// <summary>把条目移动到其他分组（追加到末尾）。</summary>
+    /// <summary>把条目移动到其他分组（追加到末尾）。目标已有同一路径时不改任何一组。</summary>
     public bool MoveItemToGroup(ShortcutViewModel item, ShortcutGroupViewModel target)
     {
         if (ReferenceEquals(item.Owner, target)) return false;
-
-        var source = item.Owner;
-        source.Model.Items.Remove(item.Model);
-        source.Items.Remove(item);
-        source.NotifyCountChanged();
 
         var model = item.Model;
         if (target.Model.Items.Any(i => i.PathKey == model.PathKey))
         {
             StatusText = $"“{target.Name}”中已存在该项";
+            return false;
         }
-        else
-        {
-            target.Model.Items.Add(model);
-            target.Items.Add(new ShortcutViewModel(model, target));
-            target.NotifyCountChanged();
-        }
+
+        var source = item.Owner;
+        source.Model.Items.Remove(model);
+        source.Items.Remove(item);
+        source.NotifyCountChanged();
+
+        target.Model.Items.Add(model);
+        target.Items.Add(new ShortcutViewModel(model, target));
+        target.NotifyCountChanged();
 
         if (ReferenceEquals(SelectedItem, item)) SelectedItem = null;
         Save();

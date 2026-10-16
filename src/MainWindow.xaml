@@ -317,6 +317,7 @@
                              PreviewMouseLeftButtonDown="TabList_PreviewMouseLeftButtonDown"
                              PreviewMouseMove="TabList_PreviewMouseMove"
                              PreviewMouseLeftButtonUp="TabList_PreviewMouseLeftButtonUp"
+                             PreviewMouseRightButtonDown="TabList_PreviewMouseRightButtonDown"
                              DragOver="TabList_DragOver"
                              DragLeave="TabList_DragLeave"
                              Drop="TabList_Drop">
@@ -496,8 +497,12 @@
 
                 <Button Grid.Column="0" Content="导入文件" Click="ImportFiles_Click" Style="{StaticResource BarButton}" />
                 <Button Grid.Column="1" Content="导入文件夹" Click="ImportFolders_Click" Style="{StaticResource BarButton}" />
-                <Button Grid.Column="2" Content="刷新" Click="Refresh_Click" Style="{StaticResource BarButton}"
-                        ToolTip="重新读取图标与路径状态" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Content="刷新" Click="Refresh_Click" Style="{StaticResource BarButton}"
+                            ToolTip="重新读取图标与路径状态" />
+                    <Button Content="设置" Click="Settings_Click" Style="{StaticResource BarButton}"
+                            ToolTip="关闭行为、全局热键、开机自启" />
+                </StackPanel>
 
                 <TextBlock Grid.Column="3" Text="{Binding StatusText}" Foreground="{StaticResource Muted}" FontSize="12"
                            VerticalAlignment="Center" Margin="10,0" TextTrimming="CharacterEllipsis" />

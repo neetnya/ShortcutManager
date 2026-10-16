@@ -68,8 +68,25 @@ public partial class SettingsWindow : Window
         if (ModCtrl.IsChecked == true) mods |= (int)HotkeyModifiers.Ctrl;
         if (ModShift.IsChecked == true) mods |= (int)HotkeyModifiers.Shift;
         if (ModWin.IsChecked == true) mods |= (int)HotkeyModifiers.Win;
+
+        var before = _vm.Modifiers;
         _vm.Modifiers = mods;
+        if (_vm.Modifiers == before && mods == 0)
+        {
+            // 视图模型拒绝了「零修饰键」：把勾选状态拉回去，避免界面和实际注册不一致
+            SyncModifierCheckboxes();
+            return;
+        }
+
         TryRegister();
+    }
+
+    private void SyncModifierCheckboxes()
+    {
+        ModAlt.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Alt) != 0;
+        ModCtrl.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Ctrl) != 0;
+        ModShift.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Shift) != 0;
+        ModWin.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Win) != 0;
     }
 
     private void HotkeyKeyBox_PreviewKeyDown(object sender, KeyEventArgs e)

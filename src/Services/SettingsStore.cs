@@ -90,14 +90,8 @@ public sealed class SettingsStore
         return new AppSettings();
     }
 
-    /// <summary>归一化非法值（例如未知的修饰键、无效的虚拟键码），避免注册快捷键时异常。</summary>
-    private static void Sanitize(AppSettings s)
-    {
-        var valid = (int)(HotkeyModifiers.Alt | HotkeyModifiers.Ctrl | HotkeyModifiers.Shift | HotkeyModifiers.Win);
-        s.HotkeyModifiers &= valid;
-
-        if (s.HotkeyKey <= 0 || s.HotkeyKey > 0xFF) s.HotkeyKey = 0x51; // Q
-    }
+    /// <summary>归一化非法值（未知修饰键、无修饰键、无效主键），避免注册成全系统单键。</summary>
+    private static void Sanitize(AppSettings s) => s.Normalize();
 
     public void Save(AppSettings settings)
     {

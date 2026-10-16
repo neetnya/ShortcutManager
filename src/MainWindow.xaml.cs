@@ -494,6 +494,8 @@ public partial class MainWindow : Window
         ((App)Application.Current).OpenSettings();
     }
 
+    private void Settings_Click(object sender, RoutedEventArgs e) => OpenSettings();
+
     /// <summary>开发验证用：--traytest 把最小化/恢复/关闭的每一步状态写入 tray-test.log。</summary>
     private List<string>? _trayLog;
 
@@ -631,6 +633,16 @@ public partial class MainWindow : Window
     {
         if (source is not DependencyObject d) return null;
         return FindAncestor<ListBoxItem>(d)?.DataContext as ShortcutGroupViewModel;
+    }
+
+    /// <summary>
+    /// 右键落在未选中的标签上时，先选中它再弹出菜单（和磁贴、资源管理器一致），
+    /// 避免「点的是工作、删掉的是常用」。
+    /// </summary>
+    private void TabList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (GroupFrom(e.OriginalSource) is { } group)
+            ViewModel.SelectedGroup = group;
     }
 
     private void TabList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

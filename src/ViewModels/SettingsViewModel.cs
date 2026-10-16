@@ -17,6 +17,7 @@ public sealed class SettingsViewModel : ObservableObject
     public SettingsViewModel(SettingsStore store, AppSettings settings)
     {
         _store = store;
+        settings.Normalize();
         _closeToTray = settings.CloseToTray;
         _autoStart = settings.AutoStart;
         _startMinimized = settings.StartMinimized;
@@ -54,7 +55,17 @@ public sealed class SettingsViewModel : ObservableObject
     public int Modifiers
     {
         get => _modifiers;
-        set { if (Set(ref _modifiers, value)) Save(); }
+        set
+        {
+            var valid = (int)(HotkeyModifiers.Alt | HotkeyModifiers.Ctrl | HotkeyModifiers.Shift | HotkeyModifiers.Win);
+            var next = value & valid;
+            if (next == 0)
+            {
+                StatusText = "快捷键至少需要一个修饰键（Alt / Ctrl / Shift / Win）";
+                return;
+            }
+            if (Set(ref _modifiers, next)) Save();
+        }
     }
 
     public int Key

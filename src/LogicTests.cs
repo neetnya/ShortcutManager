@@ -173,6 +173,25 @@ internal static class LogicTests
         var dupBlocked = vm.MoveItemToGroup(g2.Items[0], g2);
         Check("同组移动返回 false", dupBlocked, false);
 
+        // 目标组已有同一路径时，源组条目必须还在（曾经先删后判重，条目会丢）
+        var fileC = Path.Combine(sandbox, "clash.txt");
+        File.WriteAllText(fileC, "c");
+        Check("源组导入 clash", vm.Import(new[] { fileC }, g1), 1);
+        Check("目标组导入 clash", vm.Import(new[] { fileC }, g2), 1);
+        var srcCount = g1.Items.Count;
+        var dstCount = g2.Items.Count;
+        var clash = g1.Items.First(i => string.Equals(i.Path, Path.GetFullPath(fileC), StringComparison.OrdinalIgnoreCase));
+        var kept = vm.MoveItemToGroup(clash, g2);
+        Check("撞车时跨组移动返回 false", kept, false);
+        Check("撞车时源组条目仍在", g1.Items.Count, srcCount);
+        Check("撞车时目标组条目未变", g2.Items.Count, dstCount);
+
+        Section("设置归一化");
+        var raw = new AppSettings { HotkeyModifiers = 0, HotkeyKey = 0 };
+        raw.Normalize();
+        Check("无修饰键回退 Alt", raw.HotkeyModifiers, (int)HotkeyModifiers.Alt);
+        Check("无效主键回退 Q", raw.HotkeyKey, 0x51);
+
         // 移除
         Section("移除条目");
         var remCount = g1.Items.Count;

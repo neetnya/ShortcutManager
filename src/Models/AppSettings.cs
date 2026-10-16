@@ -19,6 +19,20 @@ public sealed class AppSettings
 
     /// <summary>启动后最小化到托盘（后台运行），不弹出主窗口。</summary>
     public bool StartMinimized { get; set; } = false;
+
+    /// <summary>
+    /// 归一化非法值。无修饰键的全局热键会抢走主键，这里回退到 Alt。
+    /// </summary>
+    public void Normalize()
+    {
+        const int valid = (int)(ShortcutManager.Models.HotkeyModifiers.Alt
+            | ShortcutManager.Models.HotkeyModifiers.Ctrl
+            | ShortcutManager.Models.HotkeyModifiers.Shift
+            | ShortcutManager.Models.HotkeyModifiers.Win);
+        HotkeyModifiers &= valid;
+        if (HotkeyModifiers == 0) HotkeyModifiers = (int)ShortcutManager.Models.HotkeyModifiers.Alt;
+        if (HotkeyKey <= 0 || HotkeyKey > 0xFF) HotkeyKey = 0x51;
+    }
 }
 
 /// <summary>全局快捷键的修饰键标志（与 Win32 RegisterHotKey 的 fsModifiers 对齐）。</summary>
