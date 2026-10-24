@@ -59,6 +59,14 @@ public partial class SettingsWindow : Window
         AutoStartCheck.Unchecked += (_, _) => _vm.AutoStart = false;
         StartMinimizedCheck.Checked += (_, _) => _vm.StartMinimized = true;
         StartMinimizedCheck.Unchecked += (_, _) => _vm.StartMinimized = false;
+
+        // 窗口与打开方式
+        KeepFrontCheck.IsChecked = _vm.KeepFrontAfterOpen;
+        AlwaysOnTopCheck.IsChecked = _vm.AlwaysOnTop;
+        KeepFrontCheck.Checked += (_, _) => _vm.KeepFrontAfterOpen = true;
+        KeepFrontCheck.Unchecked += (_, _) => _vm.KeepFrontAfterOpen = false;
+        AlwaysOnTopCheck.Checked += (_, _) => _vm.AlwaysOnTop = true;
+        AlwaysOnTopCheck.Unchecked += (_, _) => _vm.AlwaysOnTop = false;
     }
 
     private void UpdateModifiers()

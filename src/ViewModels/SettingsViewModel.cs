@@ -12,6 +12,8 @@ public sealed class SettingsViewModel : ObservableObject
     private bool _closeToTray;
     private bool _autoStart;
     private bool _startMinimized;
+    private bool _alwaysOnTop;
+    private bool _keepFrontAfterOpen;
     private int _modifiers;
     private int _key;
 
@@ -23,6 +25,8 @@ public sealed class SettingsViewModel : ObservableObject
         _closeToTray = settings.CloseToTray;
         _autoStart = settings.AutoStart;
         _startMinimized = settings.StartMinimized;
+        _alwaysOnTop = settings.AlwaysOnTop;
+        _keepFrontAfterOpen = settings.KeepFrontAfterOpen;
         _modifiers = settings.HotkeyModifiers;
         _key = settings.HotkeyKey;
     }
@@ -54,6 +58,20 @@ public sealed class SettingsViewModel : ObservableObject
         set { if (Set(ref _startMinimized, value)) Save(); }
     }
 
+    /// <summary>窗口始终置顶（钉住）。</summary>
+    public bool AlwaysOnTop
+    {
+        get => _alwaysOnTop;
+        set { if (Set(ref _alwaysOnTop, value)) Save(); }
+    }
+
+    /// <summary>打开条目后窗口短暂置顶，方便连续打开多个。</summary>
+    public bool KeepFrontAfterOpen
+    {
+        get => _keepFrontAfterOpen;
+        set { if (Set(ref _keepFrontAfterOpen, value)) Save(); }
+    }
+
     public int Modifiers
     {
         get => _modifiers;
@@ -82,6 +100,8 @@ public sealed class SettingsViewModel : ObservableObject
         settings.CloseToTray = _closeToTray;
         settings.AutoStart = _autoStart;
         settings.StartMinimized = _startMinimized;
+        settings.AlwaysOnTop = _alwaysOnTop;
+        settings.KeepFrontAfterOpen = _keepFrontAfterOpen;
         settings.HotkeyModifiers = _modifiers;
         settings.HotkeyKey = _key;
         if (ReferenceEquals(settings, _source)) return;

@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:ShortcutManager"
         Title="设置"
-        Height="500" Width="440"
-        MinHeight="500" MinWidth="440"
-        MaxHeight="500" MaxWidth="440"
+        Height="590" Width="440"
+        MinHeight="590" MinWidth="440"
+        MaxHeight="590" MaxWidth="440"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
@@ -119,6 +119,15 @@
                 <StackPanel>
                     <CheckBox x:Name="AutoStartCheck" Content="开机自动启动" Margin="0,0,0,10" />
                     <CheckBox x:Name="StartMinimizedCheck" Content="启动后最小化到托盘（后台运行，不弹出窗口）" />
+                </StackPanel>
+            </Border>
+
+            <!-- 窗口与打开方式（连续打开多个程序时，窗口不再被盖住） -->
+            <Border Grid.Row="3" Style="{StaticResource SectionCard}">
+                <StackPanel>
+                    <TextBlock Text="窗口与打开方式" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <CheckBox x:Name="KeepFrontCheck" Content="打开条目后窗口置顶 4 秒，方便接着开下一个" Margin="0,0,0,10" />
+                    <CheckBox x:Name="AlwaysOnTopCheck" Content="窗口始终置顶（钉在最前面，不会被别的程序盖住）" />
                 </StackPanel>
             </Border>
 

@@ -139,7 +139,7 @@
                 </Setter>
             </Style>
 
-            <!-- ===== 标签栏小按钮（翻页箭头 / 新建分组）===== -->
+            <!-- ===== 标签栏小按钮（翻页箭头 / 新建分组 / 置顶）===== -->
             <Style x:Key="TabIconButton" TargetType="Button">
                 <Setter Property="Width" Value="22" />
                 <Setter Property="Height" Value="22" />
@@ -160,6 +160,38 @@
                                 </Trigger>
                                 <Trigger Property="IsPressed" Value="True">
                                     <Setter TargetName="Bd" Property="Background" Value="{StaticResource Pressed}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ===== 标签栏开关按钮（置顶）：开时用强调色标出来 ===== -->
+            <Style x:Key="TabIconToggle" TargetType="ToggleButton">
+                <Setter Property="Width" Value="22" />
+                <Setter Property="Height" Value="22" />
+                <Setter Property="Margin" Value="1,0" />
+                <Setter Property="Foreground" Value="#8A93A6" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Hover}" />
+                                    <Setter Property="Foreground" Value="{StaticResource Accent}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource Pressed}" />
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoft}" />
+                                    <Setter Property="Foreground" Value="{StaticResource Accent}" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -335,6 +367,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <!-- 原生横向滚动条太丑：隐藏它，改用右侧的两个三角箭头翻页 -->
@@ -407,6 +440,14 @@
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
                 </Button>
+
+                <!-- 置顶：钉住后新打开的程序不会再盖住窗口（也是设置里那个开关的快捷入口） -->
+                <ToggleButton x:Name="PinToggle" Grid.Column="3" Style="{StaticResource TabIconToggle}"
+                              Margin="4,0,0,0" VerticalAlignment="Center"
+                              Click="Pin_Click"
+                              ToolTip="窗口置顶：钉住后新打开的程序不会再盖住它">
+                    <TextBlock Text="顶" FontSize="11" />
+                </ToggleButton>
             </Grid>
 
             <!-- ============ 中间：3 列网格 ============ -->

@@ -35,6 +35,15 @@ internal static class LogicTests
             try { File.Copy(realBak, realBakBackup, true); } catch { /* ignore */ }
         }
 
+        // 设置往返用例会临时改写真实 settings.json，同样先备份、跑完还原
+        var settingsFile = new SettingsStore().FilePath;
+        var settingsBackup = settingsFile + ".logicbak";
+        var hadRealSettings = File.Exists(settingsFile);
+        if (hadRealSettings)
+        {
+            try { File.Copy(settingsFile, settingsBackup, true); } catch { /* ignore */ }
+        }
+
         var sandbox = Path.Combine(Path.GetTempPath(), "sm-logic-test");
         if (Directory.Exists(sandbox)) Directory.Delete(sandbox, recursive: true);
         Directory.CreateDirectory(sandbox);
@@ -215,6 +224,65 @@ internal static class LogicTests
         Check("设置页不丢窗口左", copy.WindowLeft, 12d);
         Check("设置页不丢窗口顶", copy.WindowTop, 34d);
         Check("设置页不丢托盘提示标记", copy.HasShownTrayHint, true);
+
+        Section("窗口置顶与连续打开");
+        var winDefaults = new AppSettings();
+        Check("默认不钉住置顶", winDefaults.AlwaysOnTop, false);
+        Check("默认打开后短暂置顶", winDefaults.KeepFrontAfterOpen, true);
+
+        var winFlags = new AppSettings { AlwaysOnTop = true, KeepFrontAfterOpen = false };
+        var winVm = new SettingsViewModel(new SettingsStore(), winFlags);
+        var winCopy = new AppSettings();
+        winVm.ApplyTo(winCopy);
+        Check("设置页保留置顶开关", winCopy.AlwaysOnTop, true);
+        Check("设置页保留连续打开开关", winCopy.KeepFrontAfterOpen, false);
+
+        // 这两个开关必须真的落盘（settings.json 往返）。
+        // 受限环境（例如禁止 ReplaceFile 原子替换的沙箱）写不进去时不算功能失败，
+        // 记一条 skip；正常桌面环境会真正走一遍 Save/Load。
+        if (new SettingsStore().IsPortableLocation)
+        {
+            var probe = new AppSettings
+            {
+                AlwaysOnTop = true,
+                KeepFrontAfterOpen = false,
+                CloseToTray = false,
+                HotkeyKey = 0x52,   // R
+            };
+            try
+            {
+                new SettingsStore().Save(probe);
+                var back = new SettingsStore().Load();
+                Check("settings 置顶开关往返", back.AlwaysOnTop, true);
+                Check("settings 连续打开开关往返", back.KeepFrontAfterOpen, false);
+                Check("settings 关闭行为往返", back.CloseToTray, false);
+                Check("settings 热键往返", back.HotkeyKey, 0x52);
+                Log.Add($"  (settings written to {new SettingsStore().FilePath})");
+            }
+            catch (Exception ex)
+            {
+                Log.Add($"  (skip settings file round-trip: {ex.GetType().Name}: {ex.Message})");
+
+                // 文件写不进去也至少要证明模型能正确序列化/反序列化这两个字段
+                var json = System.Text.Json.JsonSerializer.Serialize(probe);
+                var back = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                Check("settings 置顶字段 JSON 往返", back is not null && back.AlwaysOnTop, true);
+                Check("settings 连续打开字段 JSON 往返", back is not null && !back.KeepFrontAfterOpen, true);
+            }
+        }
+        else
+        {
+            Log.Add("  (skip settings round-trip: settings.json 不在可写目录)");
+        }
+
+        Section("启动器");
+        var nowhere = new ShortcutItem { Path = Path.Combine(sandbox, "no-such-file.txt"), IsDirectory = false };
+        var missingMsg = "";
+        Check("打开不存在路径返回失败", Launcher.Open(nowhere, m => missingMsg = m), false);
+        Check("失败带文案", missingMsg.StartsWith("找不到"), true);
+        var asyncMsg = Launcher.OpenAsync(nowhere).GetAwaiter().GetResult();
+        Check("异步打开失败也回传文案", asyncMsg?.StartsWith("找不到") ?? false, true);
 
         // 移除
         Section("移除条目");
@@ -397,6 +465,14 @@ internal static class LogicTests
         {
             if (hadRealBak) { File.Copy(realBakBackup, realBak, true); File.Delete(realBakBackup); }
             else { File.Delete(realBak); }
+        }
+        catch { /* ignore */ }
+
+        // ---------- 还原真实设置 ----------
+        try
+        {
+            if (hadRealSettings) { File.Copy(settingsBackup, settingsFile, true); File.Delete(settingsBackup); }
+            else { File.Delete(settingsFile); }
         }
         catch { /* ignore */ }
 

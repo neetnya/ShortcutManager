@@ -20,6 +20,15 @@ public sealed class AppSettings
     /// <summary>启动后最小化到托盘（后台运行），不弹出主窗口。</summary>
     public bool StartMinimized { get; set; } = false;
 
+    /// <summary>主窗口是否始终置顶（钉在最前面，不被新打开的程序盖住）。</summary>
+    public bool AlwaysOnTop { get; set; } = false;
+
+    /// <summary>
+    /// 打开条目后让窗口短暂置顶几秒。用来解决「双击打开一个程序后，管理器立刻被盖住，
+    /// 想接着开第二个还得再翻出来」的问题。
+    /// </summary>
+    public bool KeepFrontAfterOpen { get; set; } = true;
+
     /// <summary>主窗口左边（DIP）。空表示仍用屏幕居中。</summary>
     public double? WindowLeft { get; set; }
 

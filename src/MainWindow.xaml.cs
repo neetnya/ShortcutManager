@@ -88,6 +88,9 @@ public partial class MainWindow : Window
         TabList.LayoutUpdated += (_, _) => UpdateTabArrows();
         TabList.SelectionChanged += TabList_SelectionChanged;
 
+        // 窗口置顶状态（设置里勾过就按设置来；置顶按钮与它保持同步）
+        ApplyPinned(_settings.AlwaysOnTop, save: false);
+
         // 调试定位用：--import <路径> 启动时直接把路径导入当前分组
         var args = Environment.GetCommandLineArgs();
         var idx = Array.FindIndex(args, a => string.Equals(a, "--import", StringComparison.OrdinalIgnoreCase));
@@ -219,6 +222,23 @@ public partial class MainWindow : Window
                 ok &= files.All(File.Exists);
 
                 try { Directory.Delete(tmp, true); } catch { /* ignore */ }
+
+                // 7) 窗口置顶：按钮开/关都要真的改到 Topmost；「打开后短暂置顶」要能自动还原
+                ApplyPinned(true, save: false);
+                var pinned = Topmost && _settings.AlwaysOnTop && PinToggle.IsChecked == true;
+                ApplyPinned(false, save: false);
+                var unpinned = !Topmost && !_settings.AlwaysOnTop && PinToggle.IsChecked == false;
+                UiTestLog($"expect-pin(置顶开/关都生效)={pinned && unpinned} pinned={pinned} unpinned={unpinned}");
+                ok &= pinned && unpinned;
+
+                _settings.KeepFrontAfterOpen = true;   // 只改内存，自动化不写设置文件
+                KeepFrontBriefly();
+                var bumped = Topmost;
+                await Task.Delay(KeepFrontMilliseconds + 600);
+                var reverted = !Topmost;
+                UiTestLog($"expect-keep-front(打开后短暂置顶，{KeepFrontMilliseconds}ms 后自动还原)=" +
+                          $"{bumped && reverted} bumped={bumped} reverted={reverted}");
+                ok &= bumped && reverted;
 
                 UiTestLog($"result={(ok ? "PASS" : "FAIL")}");
                 Environment.ExitCode = ok ? 0 : 1;
@@ -953,9 +973,91 @@ public partial class MainWindow : Window
             ViewModel.StatusText = $"路径不存在：{item.Path}";
             return;
         }
-        Launcher.Open(item.Model, msg => ViewModel.StatusText = msg);
-        ViewModel.StatusText = $"已打开 {item.Name}";
+
+        // 以前这里是同步 Process.Start：ShellExecuteEx 遇到 DDE（Office/Acrobat）、
+        // 查文件关联、首次加载 shell 扩展时会阻塞几百毫秒甚至更久，UI 线程跟着卡住，
+        // 连着双击第二下就丢了。现在丢到后台 STA 线程，双击完界面立刻还能响应。
+        var model = item.Model;
+        var name = item.Name;
+
+        ViewModel.StatusText = $"正在打开 {name}…";
+        KeepFrontBriefly();               // 先把窗口顶上去，目标程序一出来盖不住它
+        _ = ReportOpenResultAsync(model, name);
     }
+
+    private async Task ReportOpenResultAsync(ShortcutItem model, string name)
+    {
+        var error = await Launcher.OpenAsync(model);   // 回到 UI 线程再改状态栏
+        ViewModel.StatusText = error ?? $"已打开 {name}";
+    }
+
+    // ==================================================================
+    //  打开后的窗口行为：短暂置顶 / 钉住置顶
+    // ==================================================================
+
+    /// <summary>打开条目后窗口停留置顶的时长。</summary>
+    private const int KeepFrontMilliseconds = 4000;
+
+    private DispatcherTimer? _frontTimer;
+
+    /// <summary>
+    /// 打开条目后让窗口在目标程序之上停留几秒：想接着双击下一个时，
+    /// 不用先去任务栏把管理器翻出来。只改 Topmost，不抢键盘焦点，
+    /// 刚打开的程序仍然是活动窗口。
+    /// </summary>
+    private void KeepFrontBriefly()
+    {
+        if (!_settings.KeepFrontAfterOpen) return;
+        if (!IsVisible || WindowState == WindowState.Minimized) return;
+
+        if (_frontTimer is null)
+        {
+            _frontTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(KeepFrontMilliseconds) };
+            _frontTimer.Tick += (_, _) =>
+            {
+                _frontTimer?.Stop();
+                // 用户自己钉住置顶时，到时也保持置顶
+                Topmost = _settings.AlwaysOnTop;
+            };
+        }
+
+        _frontTimer.Stop();
+        Topmost = true;
+        _frontTimer.Start();
+    }
+
+    private void Pin_Click(object sender, RoutedEventArgs e)
+    {
+        // ToggleButton 已经把 IsChecked 翻好了，这里只负责落状态
+        ApplyPinned(PinToggle.IsChecked == true, save: !App.IsAutomationRun);
+    }
+
+    /// <summary>置顶开关（标题栏按钮和设置页共用同一条路径）。</summary>
+    internal void ApplyPinned(bool pinned, bool save)
+    {
+        _settings.AlwaysOnTop = pinned;
+        if (PinToggle.IsChecked != pinned) PinToggle.IsChecked = pinned;   // 只改状态，不触发 Click
+
+        if (pinned)
+        {
+            _frontTimer?.Stop();
+            Topmost = true;
+        }
+        else if (_frontTimer is not { IsEnabled: true })
+        {
+            Topmost = false;
+        }
+
+        PinToggle.ToolTip = pinned
+            ? "窗口已置顶：新打开的程序不会再盖住它（再点一次取消）"
+            : "窗口置顶：钉住后新打开的程序不会再盖住它";
+
+        if (!save) return;
+        try { _settingsStore.Save(_settings); } catch { /* ignore */ }
+    }
+
+    /// <summary>设置窗口改完关闭后，把窗口级设置同步到正在运行的窗口上。</summary>
+    internal void ApplyWindowSettings() => ApplyPinned(_settings.AlwaysOnTop, save: false);
 
     private void TileList_KeyDown(object sender, KeyEventArgs e)
     {

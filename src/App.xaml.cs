@@ -224,6 +224,7 @@ public partial class App : Application
             _settingsStore!.Save(_settings);
             _hotkeys?.Reregister(_settings);
             SyncAutoStart();
+            _window?.ApplyWindowSettings();   // 置顶 / 打开后短暂置顶也立刻生效
             _settingsWindow = null;
         };
         _settingsWindow.Show();
