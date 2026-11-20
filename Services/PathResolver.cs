@@ -8,9 +8,15 @@ namespace ShortcutManager.Services;
 /// </summary>
 public static class PathResolver
 {
-    /// <summary>程序所在目录（相对路径的基准）。</summary>
+    /// <summary>程序所在目录（相对路径的基准，确保以目录分隔符结尾以避免同前缀目录误匹配）。</summary>
     public static string BaseDirectory { get; } =
-        Path.GetFullPath(AppContext.BaseDirectory);
+        EnsureTrailingSeparator(Path.GetFullPath(AppContext.BaseDirectory));
+
+    private static string BaseDirectoryTrimmed { get; } =
+        Path.TrimEndingDirectorySeparator(BaseDirectory);
+
+    private static string EnsureTrailingSeparator(string path)
+        => Path.EndsInDirectorySeparator(path) ? path : path + Path.DirectorySeparatorChar;
 
     /// <summary>完整路径 → 存储形式：exe 同目录或子目录转相对路径，否则保持绝对路径。</summary>
     public static string ToStoragePath(string fullPath)
@@ -27,11 +33,13 @@ public static class PathResolver
             return fullPath;
         }
 
-        // 同目录 → "file.txt"；子目录 → "sub\file.txt"；指向程序目录本身 → "."
-        if (full.StartsWith(BaseDirectory, StringComparison.OrdinalIgnoreCase))
+        // 严格匹配程序目录本身或其子路径，防止 C:\App2 误匹配 C:\App
+        var isSameDir = string.Equals(Path.TrimEndingDirectorySeparator(full), BaseDirectoryTrimmed, StringComparison.OrdinalIgnoreCase);
+        var isUnderDir = full.StartsWith(BaseDirectory, StringComparison.OrdinalIgnoreCase);
+        if (isSameDir || isUnderDir)
         {
             var rel = Path.GetRelativePath(BaseDirectory, full);
-            if (rel != ".." && !rel.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            if (!Path.IsPathRooted(rel) && rel != ".." && !rel.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
                 return rel;
         }
         return full;

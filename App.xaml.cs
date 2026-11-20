@@ -57,12 +57,6 @@ public partial class App : Application
 
     private void StartupCore(StartupEventArgs e)
     {
-        // ---- 单实例：重复双击不再开第二个窗口 ----
-        // 已有实例时把它的窗口还原出来（可能正被最小化），然后本进程退出。
-        //
-        // 但自动化/调试开关不属于“用户双击”场景，必须真的跑起来：
-        // 否则用户正开着程序时，--traytest / --uitest 会被这里静默拦掉，
-        // 而且因为走的是正常退出路径，退出码还是 0 —— 变成“假绿”。
         if (IsAutomationRun)
         {
             StartApp();
@@ -101,8 +95,6 @@ public partial class App : Application
 
     private void StartApp()
     {
-        // 主窗口关闭不一定退出：关闭按钮默认最小化到托盘（后台常驻），
-        // 因此不能用 OnMainWindowClose，改由代码在真正退出时调用 Shutdown。
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         // ---- 载入设置（settings.json，与 config.json 分离）----
@@ -110,7 +102,7 @@ public partial class App : Application
         try { _settings = _settingsStore.Load(); }
         catch { _settings = new AppSettings(); }
 
-        // ---- 载入配置（同步、很快；无需配置文件时几乎零开销）----
+        // ---- 载入配置 ----
         _store = new ConfigStore();
         List<ShortcutGroup> groups;
         try
@@ -122,24 +114,20 @@ public partial class App : Application
             groups = new List<ShortcutGroup> { new() { Name = "常用" } };
         }
 
-        var vm = new MainViewModel(_store, groups);
+        // UI 启动延迟磁盘探测：避免网络盘/慢速介质阻塞首屏显示
+        var vm = new MainViewModel(_store, groups, deferDiskProbe: true);
 
-        // 首次运行就把 config.json 落盘，保证便携文件始终存在
-        // （即使程序被强制结束，也不会有“配置从来没写过”的窗口期）
-        vm.Save();
+        // 仅在首次运行（配置文件尚不存在）时落盘，避免每次启动无谓重写磁盘
+        if (!File.Exists(_store.FilePath))
+            vm.Save();
 
         _window = new MainWindow(vm, _settings, _settingsStore);
         MainWindow = _window;
 
-        // 关闭行为配置通过 MainWindow 的 Closing 事件处理（见 MainWindow）
-        // 托盘退出时回调这里真正结束进程
         _window.ExitRequested += () => Shutdown();
 
-        // 开机自启：按设置同步一次注册表（防止上次改设置后没落盘）
         SyncAutoStart();
 
-        // 先让窗口完成 SourceInitialized（拿到真实 HWND 与消息循环），再注册全局快捷键，
-        // 否则 RegisterHotKey 会挂在一个尚未就绪的窗口句柄上，快捷键收不到 WM_HOTKEY。
         if (_settings.StartMinimized)
         {
             _window.HideToTrayOnStartup();
@@ -161,24 +149,13 @@ public partial class App : Application
             vm.StatusText = $"全局热键 {name} 被占用，可在设置里更换";
         }
 
-        // 启动后预热所有分组的图标缓存（后台线程，不阻塞首屏）
-        Task.Run(() =>
-        {
-            foreach (var g in vm.Groups)
-            {
-                var items = g.Items.Select(i => i.Model).ToList();
-                ImportService.WarmIcons(items);
-            }
-        });
-
-        // ---- 全局快捷键验证：注册状态 + 触发链，结果写入 hotkey-test.log ----
+        // ---- 全局快捷键验证（--hotkeytest）----
         if (Environment.GetCommandLineArgs().Any(a => a == "--hotkeytest"))
         {
             var log = new List<string>();
             log.Add($"registered={_hotkeys!.IsRegistered}");
             log.Add($"hwnd={App.HandleOf(_window)}");
             log.Add($"modifiers={_settings.HotkeyModifiers} key={_settings.HotkeyKey} (default Alt+Q = 1/81)");
-            // 走真实触发链：隐藏窗口 → 模拟 WM_HOTKEY → 应被唤起
             _window.HideToTrayOnStartup();
             _hotkeys.SimulateHotkey();
             System.Threading.Thread.Sleep(500);
@@ -199,14 +176,13 @@ public partial class App : Application
         else App.ForceForeground(_window);
     }
 
-    /// <summary>按设置同步开机自启注册表（尽力而为，失败静默）。</summary>
     private void SyncAutoStart()
     {
         try { AutoStartService.SetEnabled(_settings.AutoStart); }
         catch { /* ignore */ }
     }
 
-    /// <summary>打开设置窗口（托盘菜单“设置”调用）。</summary>
+    /// <summary>打开设置窗口（托盘菜单/底部按钮“设置”调用）。</summary>
     internal void OpenSettings()
     {
         if (_settingsWindow is { IsLoaded: true })
@@ -215,27 +191,20 @@ public partial class App : Application
             return;
         }
 
-        var vm = new ViewModels.SettingsViewModel(_settingsStore!, _settings);
+        var vm = new SettingsViewModel(_settingsStore!, _settings);
         _settingsWindow = new SettingsWindow(vm, _hotkeys!) { Owner = _window };
         _settingsWindow.Closed += (_, _) =>
         {
-            // 设置窗口关闭后，把最终值写回内存，确保全局快捷键与自启即时生效
+            // SettingsViewModel 改动已实时落盘，关闭时仅同步内存与运行时状态
             _settings = _settingsWindow.AppliedSettings;
-            _settingsStore!.Save(_settings);
             _hotkeys?.Reregister(_settings);
             SyncAutoStart();
-            _window?.ApplyWindowSettings();   // 置顶 / 打开后短暂置顶也立刻生效
+            _window?.ApplyWindowSettings();
             _settingsWindow = null;
         };
         _settingsWindow.Show();
     }
 
-    /// <summary>
-    /// 尽力把窗口切到前台并还原。
-    /// Windows 有前台锁（foreground lock），刚启动的进程光调 Activate() 不一定生效，
-    /// 这里补一个 AttachThreadInput 的常规做法。
-    /// （窗口从托盘恢复时也走这里，所以是 internal。）
-    /// </summary>
     internal static void ForceForeground(Window window)
     {
         try
@@ -246,9 +215,6 @@ public partial class App : Application
             var hwnd = new WindowInteropHelper(window).Handle;
             if (hwnd == IntPtr.Zero) return;
 
-            // 先把 Win32 层的“最小化”真的解掉，再谈抢前台。
-            // 少了这一步会出现：WPF 属性是 Normal，但窗口真身仍是最小化，
-            // 于是“已经在前台”却看不见（用户还得自己点任务栏）。
             if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
 
             window.Activate();
@@ -287,32 +253,22 @@ public partial class App : Application
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-
-    // ---- 以下三个只给自动化验证（--traytest）用：报告 Win32 层的真实状态 ----
-
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
 
-    /// <summary>窗口句柄（用于在测试里查 Win32 状态）。</summary>
     internal static IntPtr HandleOf(Window window) => new WindowInteropHelper(window).Handle;
 
-    /// <summary>Win32 层是否真的处于最小化（WPF 的 WindowState 可能和它对不上）。</summary>
     internal static bool IsMinimizedHwnd(Window window)
     {
         var hwnd = HandleOf(window);
         return hwnd != IntPtr.Zero && IsIconic(hwnd);
     }
 
-    /// <summary>是否真的拿到了前台（不是只在任务栏闪一下）。</summary>
     internal static bool IsForeground(Window window)
     {
         var hwnd = HandleOf(window);
         return hwnd != IntPtr.Zero && GetForegroundWindow() == hwnd;
     }
 
-    /// <summary>
-    /// 当前前台窗口属于哪个进程（只给测试日志用）。
-    /// 用来确认测试里“别的程序正占着前台”这个前提是否真的成立。
-    /// </summary>
     internal static string ForegroundOwnerName()
     {
         try
@@ -327,16 +283,7 @@ public partial class App : Application
         catch { return "(error)"; }
     }
 
-    /// <summary>把窗口还原到前台（重复启动 exe、或从托盘/最小化恢复时用）。</summary>
-    public void BringToFront()
-    {
-        // RestoreFromTray 内部已经会把窗口置前，这里不再重复调 ForceForeground
-        _window?.RestoreFromTray();   // 可能正藏在托盘里
-    }
-
-    // ==================================================================
-    //  单实例之间的“唤出窗口”通知（命名事件，无需窗口消息）
-    // ==================================================================
+    public void BringToFront() => _window?.RestoreFromTray();
 
     private const string SingleInstanceName = @"Local\ShortcutManager.SingleInstance";
     private const string ActivateEventName = @"Local\ShortcutManager.Activate";
@@ -360,7 +307,6 @@ public partial class App : Application
         try
         {
             _activateSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
-            // 回调在线程池上跑，切回 UI 线程再动窗口
             _activateRegistration = ThreadPool.RegisterWaitForSingleObject(
                 _activateSignal,
                 (_, _) => Dispatcher.BeginInvoke(new Action(BringToFront)),
@@ -373,7 +319,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        try { _window?.ViewModel.Save(); } catch { /* ignore */ }
+        try { _window?.CleanupOnExit(); } catch { /* ignore */ }
         try { _hotkeys?.Dispose(); } catch { /* ignore */ }
         try { _settingsWindow?.Close(); } catch { /* ignore */ }
         try { _activateRegistration?.Unregister(null); } catch { /* ignore */ }

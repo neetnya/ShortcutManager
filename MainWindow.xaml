@@ -20,15 +20,7 @@
     <Window.Resources>
         <ResourceDictionary>
 
-            <!-- ?? ===== 调色板 ===== -->
-            <SolidColorBrush x:Key="Accent" Color="#2F6FED" />
-            <SolidColorBrush x:Key="AccentSoft" Color="#E7EFFE" />
-            <SolidColorBrush x:Key="Line" Color="#E1E5EE" />
-            <SolidColorBrush x:Key="Muted" Color="#7A869A" />
-            <SolidColorBrush x:Key="Hover" Color="#EAEEF7" />
-            <SolidColorBrush x:Key="Pressed" Color="#DCE4F5" />
-
-            <!-- ===== 底部工具条按钮 ===== -->
+<!-- ===== 底部工具条按钮 ===== -->
             <Style x:Key="BarButton" TargetType="Button">
                 <Setter Property="Height" Value="28" />
                 <Setter Property="Padding" Value="12,0" />
@@ -450,7 +442,7 @@
                 </ToggleButton>
             </Grid>
 
-            <!-- ============ 中间：3 列网格 ============ -->
+            <!-- ============ 中间：4 列网格 ============ -->
             <Border Grid.Row="1" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1"
                     CornerRadius="10" Margin="8,0,8,8" ClipToBounds="True">
                 <Grid>

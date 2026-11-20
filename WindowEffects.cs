@@ -4,7 +4,7 @@ using System.Windows.Interop;
 
 namespace ShortcutManager;
 
-/// <summary>可选的窗口视觉效果。全部为尽力而为，失败不影响功能。</summary>
+/// <summary>可选的窗口视觉效果与样式控制。全部为尽力而为，失败不影响功能。</summary>
 internal static class WindowEffects
 {
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
@@ -14,11 +14,9 @@ internal static class WindowEffects
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
     /// <summary>
-    /// 只做 Windows 11 圆角。
-    /// 不使用亚克力（SetWindowCompositionAttribute）：第三方背景模糊会让整窗内容发灰发虚，
-    /// 这类小工具窗口要的是内容清晰、启动快，所以保持不透明背景。
+    /// 启用 Windows 11 原生圆角（不使用背景模糊以保持内容清晰与启动速度）。
     /// </summary>
-    public static void ApplyAcrylic(Window window)
+    public static void ApplyRoundedCorners(Window window)
     {
         var hwnd = new WindowInteropHelper(window).Handle;
         if (hwnd == IntPtr.Zero) return;
@@ -43,12 +41,8 @@ internal static class WindowEffects
     private const int HTCAPTION = 2;
 
     /// <summary>
-    /// 禁用最大化：窗口固定尺寸，最大化按钮、标题栏双击、系统菜单里的“最大化”都不再有效。
-    /// <para>
-    /// WPF 没有“保留拖拽改变大小、但不要最大化”的开关（`ResizeMode` 要么连最大化按钮一起带上，
-    /// 要么把边框和缩放一起去掉），所以直接改 Win32 窗口样式，再去消息层补漏。
+    /// 禁用最大化：窗口保留拖拽改尺寸，但最大化按钮、标题栏双击、系统菜单里的“最大化”都不再有效。
     /// 三层保险：样式位 → 拦 SC_MAXIMIZE/双击标题栏 → 万一还是进了最大化就立刻还原。
-    /// </para>
     /// </summary>
     public static void DisableMaximize(Window window)
     {
@@ -62,32 +56,46 @@ internal static class WindowEffects
         }
         catch { /* 改不了样式也别让程序起不来 */ }
 
+        HwndSource? source = null;
+        HwndSourceHook? hook = null;
         try
         {
-            HwndSource.FromHwnd(hwnd)?.AddHook((IntPtr _, int msg, IntPtr w, IntPtr _, ref bool handled) =>
+            source = HwndSource.FromHwnd(hwnd);
+            if (source is not null)
             {
-                switch (msg)
+                hook = (IntPtr _, int msg, IntPtr w, IntPtr _, ref bool handled) =>
                 {
-                    // 系统菜单 / Win+↑ 走的是 SC_MAXIMIZE
-                    case WM_SYSCOMMAND when ((int)w & 0xFFF0) == SC_MAXIMIZE:
-                        handled = true;
-                        return IntPtr.Zero;
+                    switch (msg)
+                    {
+                        case WM_SYSCOMMAND when ((int)w & 0xFFF0) == SC_MAXIMIZE:
+                            handled = true;
+                            return IntPtr.Zero;
 
-                    // 双击标题栏（样式位已经能挡，这里再兜一次）
-                    case WM_NCLBUTTONDBLCLK when (int)w == HTCAPTION:
-                        handled = true;
-                        return IntPtr.Zero;
-                }
-                return IntPtr.Zero;
-            });
+                        case WM_NCLBUTTONDBLCLK when (int)w == HTCAPTION:
+                            handled = true;
+                            return IntPtr.Zero;
+                    }
+                    return IntPtr.Zero;
+                };
+                source.AddHook(hook);
+            }
         }
         catch { /* ignore */ }
 
-        // 最后一道保险：任何途径（Aero Snap 等）真进了最大化，立刻退回普通状态
-        window.StateChanged += (_, _) =>
+        void OnStateChanged(object? sender, EventArgs e)
         {
             if (window.WindowState == WindowState.Maximized)
                 window.WindowState = WindowState.Normal;
+        }
+
+        window.StateChanged += OnStateChanged;
+        window.Closed += (_, _) =>
+        {
+            window.StateChanged -= OnStateChanged;
+            if (source is not null && hook is not null)
+            {
+                try { source.RemoveHook(hook); } catch { /* ignore */ }
+            }
         };
     }
 
@@ -111,7 +119,6 @@ internal static class WindowEffects
         else SetWindowLong32(hwnd, GWL_STYLE, (int)style);
     }
 
-    // 32/64 位各一套：user32 里 GetWindowLongPtrW 只在 64 位系统上存在
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
     private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
 

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Windows;
 using System.Windows.Data;
 using ShortcutManager.Models;
 using ShortcutManager.Services;
@@ -9,36 +10,31 @@ namespace ShortcutManager.ViewModels;
 /// <summary>整个应用的状态。</summary>
 public sealed class MainViewModel : ObservableObject
 {
-    /// <summary>一行固定四个。</summary>
-    public const int Columns = 4;
-
-    /// <summary>网格区域左右内边距（与 XAML 中 ListBox 的 Padding 保持一致）。</summary>
-    public const double GridPadding = 8;
-
-    /// <summary>每格间距（与 Tile 样式的 Margin 保持一致）。</summary>
-    public const double TileGap = 6;
-
-    /// <summary>每格高度（与 Tile 样式保持一致）。</summary>
-    public const double TileHeight = 92;
-
     private readonly ConfigStore _store;
     private ShortcutGroupViewModel? _selectedGroup;
     private ShortcutViewModel? _selectedItem;
-    private ShortcutViewModel? _clipboardItem;
     private string _statusText = string.Empty;
     private string _filterText = string.Empty;
     private RemovedSlice? _undoRemove;
+    private bool _warnedFallback;
 
-    public MainViewModel(ConfigStore store, List<ShortcutGroup> groups)
+    /// <summary>
+    /// 初始化视图模型。
+    /// 当 <paramref name="deferDiskProbe"/> 为 true（UI 启动路径）时，不在 UI 线程同步查磁盘，
+    /// 由调用方在窗口显示后通过 <see cref="ProbeAllStatusAsync"/> 后台探测。
+    /// </summary>
+    public MainViewModel(ConfigStore store, List<ShortcutGroup> groups, bool deferDiskProbe = false)
     {
         _store = store;
         foreach (var g in groups)
         {
-            // 载入时根据磁盘实际情况修正 文件/文件夹 判定
-            foreach (var item in g.Items)
-                item.IsDirectory = Directory.Exists(item.FullPath);
+            if (!deferDiskProbe)
+            {
+                foreach (var item in g.Items)
+                    item.IsDirectory = Directory.Exists(item.FullPath);
+            }
 
-            Groups.Add(new ShortcutGroupViewModel(g));
+            Groups.Add(new ShortcutGroupViewModel(g, initialItemExists: deferDiskProbe ? true : null));
         }
 
         _selectedGroup = Groups.FirstOrDefault();
@@ -226,11 +222,11 @@ public sealed class MainViewModel : ObservableObject
         foreach (var item in created)
         {
             target.Model.Items.Add(item);
-            target.Items.Add(new ShortcutViewModel(item, target));
+            target.Items.Add(new ShortcutViewModel(item, target, initialExists: true));
         }
         target.NotifyCountChanged();
         Save();
-        WarmIconsAsync(target);
+        ImportService.WarmIcons(created);
         return created.Count;
     }
 
@@ -267,9 +263,9 @@ public sealed class MainViewModel : ObservableObject
             {
                 _undoRemove = new RemovedSlice
                 {
-                    Group = snapshot[0].item.Owner,
-                    Index = snapshot[0].index,
-                    Models = snapshot.Select(x => x.item.Model).ToList(),
+                    Entries = snapshot
+                        .Select(x => new RemovedEntry(x.item.Owner, x.index, x.item.Model))
+                        .ToList(),
                 };
             }
             Save();
@@ -281,29 +277,33 @@ public sealed class MainViewModel : ObservableObject
     public bool CanUndoRemove
         => _undoRemove is not null
            && DateTime.UtcNow - _undoRemove.At < TimeSpan.FromSeconds(15)
-           && Groups.Contains(_undoRemove.Group);
+           && _undoRemove.Entries.Any(e => Groups.Contains(e.Group));
 
-    /// <summary>撤销上一次移除，把条目插回原来的分组和大致位置。</summary>
+    /// <summary>撤销上一次移除，按原分组与原索引精确插回。</summary>
     public bool UndoLastRemove()
     {
         if (!CanUndoRemove || _undoRemove is null) return false;
         var slice = _undoRemove;
         _undoRemove = null;
 
-        var insertAt = Math.Clamp(slice.Index, 0, slice.Group.Items.Count);
+        var touchedGroups = new HashSet<ShortcutGroupViewModel>();
         var restored = 0;
-        for (var i = 0; i < slice.Models.Count; i++)
+
+        // 按原索引升序插回，确保不连续多选也能恢复各自原始位置
+        foreach (var entry in slice.Entries.OrderBy(e => e.OriginalIndex))
         {
-            var model = slice.Models[i];
-            if (slice.Group.Model.Items.Any(x => x.PathKey == model.PathKey)) continue;
-            var at = Math.Min(insertAt + i, slice.Group.Items.Count);
-            slice.Group.Model.Items.Insert(at, model);
-            slice.Group.Items.Insert(at, new ShortcutViewModel(model, slice.Group));
+            if (!Groups.Contains(entry.Group)) continue;
+            if (entry.Group.Model.Items.Any(x => x.PathKey == entry.Model.PathKey)) continue;
+
+            var at = Math.Clamp(entry.OriginalIndex, 0, entry.Group.Items.Count);
+            entry.Group.Model.Items.Insert(at, entry.Model);
+            entry.Group.Items.Insert(at, new ShortcutViewModel(entry.Model, entry.Group));
+            touchedGroups.Add(entry.Group);
             restored++;
         }
 
         if (restored == 0) return false;
-        slice.Group.NotifyCountChanged();
+        foreach (var g in touchedGroups) g.NotifyCountChanged();
         Save();
         RaiseEmpty();
         StatusText = restored == 1 ? "已撤销移除" : $"已撤销移除 {restored} 项";
@@ -337,7 +337,7 @@ public sealed class MainViewModel : ObservableObject
         source.NotifyCountChanged();
 
         target.Model.Items.Add(model);
-        target.Items.Add(new ShortcutViewModel(model, target));
+        target.Items.Add(new ShortcutViewModel(model, target, initialExists: item.Exists));
         target.NotifyCountChanged();
 
         if (ReferenceEquals(SelectedItem, item)) SelectedItem = null;
@@ -419,37 +419,86 @@ public sealed class MainViewModel : ObservableObject
         Save();
     }
 
-    public void CopyItem(ShortcutViewModel item) => _clipboardItem = item;
-
-    public ShortcutViewModel? ClipboardItem => _clipboardItem;
-
-    /// <summary>重新读取所有条目的图标与存在状态。</summary>
+    /// <summary>同步刷新所有条目的图标与存在状态（兼容非 UI 调用）。</summary>
     public void RefreshAll()
     {
+        ShellIcons.ClearCache();
         foreach (var g in Groups)
         {
             g.NotifyCountChanged();
             foreach (var item in g.Items)
             {
-                item.Model.IsDirectory = Directory.Exists(item.Model.FullPath);
-                item.Refresh();
+                var isDir = Directory.Exists(item.Model.FullPath);
+                item.Model.IsDirectory = isDir;
+                var exists = isDir || File.Exists(item.Model.FullPath);
+                item.Refresh(probedExists: exists);
             }
         }
         Save();
     }
 
-    public void WarmIcons(ShortcutGroupViewModel group) => WarmIconsAsync(group);
-
-    private void WarmIconsAsync(ShortcutGroupViewModel group)
+    /// <summary>后台异步探测所有条目的存在状态（不阻塞 UI 线程，网络盘/慢盘友好）。</summary>
+    public Task ProbeAllStatusAsync(bool reloadIcons = false)
     {
-        var snapshot = group.Items.Select(i => i.Model).ToList();
-        Task.Run(() => ImportService.WarmIcons(snapshot));
+        if (reloadIcons) ShellIcons.ClearCache();
+
+        // 在 UI 线程做好快照，避免后台线程遍历 ObservableCollection 抛并发修改异常
+        var snapshot = Groups
+            .SelectMany(g => g.Items)
+            .Select(vm => (vm, path: vm.Path))
+            .ToList();
+
+        return Task.Run(() =>
+        {
+            var results = new List<(ShortcutViewModel vm, bool isDir, bool exists)>(snapshot.Count);
+            foreach (var (vm, path) in snapshot)
+            {
+                var isDir = !string.IsNullOrWhiteSpace(path) && Directory.Exists(path);
+                var exists = isDir || (!string.IsNullOrWhiteSpace(path) && File.Exists(path));
+                results.Add((vm, isDir, exists));
+            }
+
+            void Apply()
+            {
+                foreach (var (vm, isDir, exists) in results)
+                    vm.ApplyProbedState(isDir, exists, reloadIcon: reloadIcons);
+            }
+
+            var disp = Application.Current?.Dispatcher;
+            if (disp is not null) disp.BeginInvoke(Apply);
+            else Apply();
+        });
+    }
+
+    /// <summary>异步刷新全部图标与路径存在状态。</summary>
+    public async Task RefreshAllAsync()
+    {
+        foreach (var g in Groups) g.NotifyCountChanged();
+        await ProbeAllStatusAsync(reloadIcons: true);
+        WarmAllIcons(prioritizeSelected: true);
+    }
+
+    /// <summary>在 UI 线程快照并提交后台图标预热队列（当前分组优先）。</summary>
+    public void WarmAllIcons(bool prioritizeSelected = true)
+    {
+        var items = new List<ShortcutItem>();
+        if (prioritizeSelected && SelectedGroup is not null)
+        {
+            items.AddRange(SelectedGroup.Items.Select(i => i.Model));
+        }
+
+        foreach (var g in Groups)
+        {
+            if (prioritizeSelected && ReferenceEquals(g, SelectedGroup)) continue;
+            items.AddRange(g.Items.Select(i => i.Model));
+        }
+
+        ImportService.WarmIcons(items);
     }
 
     public void Save()
     {
-        // 自动化验证（--uitest）会在界面里真的增删分组/条目，置位后一律不落盘，
-        // 这样跑测试不会污染用户的 config.json
+        // 自动化验证（--uitest）会在界面里真的增删分组/条目，置位后一律不落盘
         if (SuppressSave) return;
 
         LastSaveError = string.Empty;
@@ -465,7 +514,6 @@ public sealed class MainViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            // 两个位置都写不进去时才报错（例如磁盘满、权限被策略限制）
             LastSaveError = ex.ToString();
             StatusText = _store.IsPortableLocation
                 ? "无法保存：程序目录和用户目录都不可写"
@@ -480,19 +528,17 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    private bool _warnedFallback;
-
     /// <summary>调试用：置为 true 后 <see cref="Save"/> 直接返回（--uitest 用，避免测试数据写进真实配置）。</summary>
     public bool SuppressSave { get; set; }
 
     /// <summary>调试用：最近一次保存的错误（无错误为空）。</summary>
     public string LastSaveError { get; private set; } = string.Empty;
 
+    private readonly record struct RemovedEntry(ShortcutGroupViewModel Group, int OriginalIndex, ShortcutItem Model);
+
     private sealed class RemovedSlice
     {
-        public required ShortcutGroupViewModel Group { get; init; }
-        public required int Index { get; init; }
-        public required List<ShortcutItem> Models { get; init; }
+        public required List<RemovedEntry> Entries { get; init; }
         public DateTime At { get; init; } = DateTime.UtcNow;
     }
 }

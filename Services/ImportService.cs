@@ -1,4 +1,3 @@
-using System.Windows.Media;
 using ShortcutManager.Models;
 
 namespace ShortcutManager.Services;
@@ -12,6 +11,7 @@ public static class ImportService
     {
         var existing = new HashSet<string>(target.Items.Select(i => i.PathKey), StringComparer.OrdinalIgnoreCase);
         var result = new List<ShortcutItem>();
+        using var lnkResolver = new ShellLink.ShellLinkResolver();
 
         foreach (var raw in paths)
         {
@@ -22,12 +22,12 @@ public static class ImportService
             if (path.Length == 0) continue;
 
             bool isDir = Directory.Exists(path);
-            bool isFile = File.Exists(path);
+            bool isFile = !isDir && File.Exists(path);
             if (!isDir && !isFile) continue;
 
             var arguments = string.Empty;
-            if (!isDir && ShellLink.TryResolve(path, out var resolved, out var args)
-                && (File.Exists(resolved) || Directory.Exists(resolved)))
+            if (!isDir && lnkResolver.TryResolve(path, out var resolved, out var args)
+                && (Directory.Exists(resolved) || File.Exists(resolved)))
             {
                 path = resolved;
                 arguments = args;
@@ -49,13 +49,12 @@ public static class ImportService
         return result;
     }
 
-    /// <summary>后台预热图标，避免首屏出现图标逐个跳出的观感。</summary>
+    /// <summary>将条目放入后台图标提取队列进行预热，避免首屏图标逐个跳出或并发争锁。</summary>
     public static void WarmIcons(IEnumerable<ShortcutItem> items)
     {
         foreach (var item in items)
         {
-            try { ShellIcons.Get(item.FullPath, item.IsDirectory); }
-            catch { /* ignore */ }
+            ShellIcons.EnqueueWarm(item.FullPath, item.IsDirectory);
         }
     }
 }

@@ -3,7 +3,7 @@ using ShortcutManager.Models;
 
 namespace ShortcutManager.ViewModels;
 
-/// <summary>一个 tab = 一个分组，内部固定“一行三个”。</summary>
+/// <summary>一个 tab = 一个分组，内部固定“一行四个”。</summary>
 public sealed class ShortcutGroupViewModel : ObservableObject
 {
     private string _name;
@@ -13,12 +13,12 @@ public sealed class ShortcutGroupViewModel : ObservableObject
     private bool _isDragTargetAfter;
     private bool _isDropHover;
 
-    public ShortcutGroupViewModel(ShortcutGroup model)
+    public ShortcutGroupViewModel(ShortcutGroup model, bool? initialItemExists = null)
     {
         Model = model;
         _name = model.Name;
         foreach (var item in model.Items)
-            Items.Add(new ShortcutViewModel(item, this));
+            Items.Add(new ShortcutViewModel(item, this, initialItemExists));
     }
 
     public ShortcutGroup Model { get; }

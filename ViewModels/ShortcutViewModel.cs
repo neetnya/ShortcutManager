@@ -10,6 +10,7 @@ public sealed class ShortcutViewModel : ObservableObject
 {
     private readonly ShortcutItem _model;
     private ImageSource? _icon;
+    private bool? _exists;
     private bool _isRenaming;
     private string _renameBuffer = string.Empty;
     private bool _isSelected;
@@ -17,10 +18,11 @@ public sealed class ShortcutViewModel : ObservableObject
     private bool _isDragTargetAfter;
     private bool _iconLoading;
 
-    public ShortcutViewModel(ShortcutItem model, ShortcutGroupViewModel owner)
+    public ShortcutViewModel(ShortcutItem model, ShortcutGroupViewModel owner, bool? initialExists = null)
     {
         _model = model;
         Owner = owner;
+        _exists = initialExists;
     }
 
     public ShortcutItem Model => _model;
@@ -35,7 +37,8 @@ public sealed class ShortcutViewModel : ObservableObject
 
     public bool IsDirectory => _model.IsDirectory;
 
-    public bool Exists => _model.Exists;
+    /// <summary>缓存的存在状态，避免每次悬停 Tooltip 或触发绑定时在 UI 线程同步访问磁盘/网络路径。</summary>
+    public bool Exists => _exists ??= _model.Exists;
 
     public string Name => _model.EffectiveName;
 
@@ -61,12 +64,9 @@ public sealed class ShortcutViewModel : ObservableObject
         _iconLoading = true;
         var path = _model.FullPath;
         var isDir = _model.IsDirectory;
-        Task.Run(() =>
-        {
-            ImageSource? image = null;
-            try { image = ShellIcons.Get(path, isDir); }
-            catch { /* ignore */ }
 
+        ShellIcons.Enqueue(path, isDir, image =>
+        {
             void Apply()
             {
                 _iconLoading = false;
@@ -151,14 +151,49 @@ public sealed class ShortcutViewModel : ObservableObject
         Raise(nameof(Tooltip));
     }
 
-    /// <summary>刷新路径相关的显示（路径不存在状态变化时调用）。</summary>
-    public void Refresh()
+    /// <summary>由后台异步探测完成后在 UI 线程回写目录/存在状态，仅在变化时通知界面。</summary>
+    public void ApplyProbedState(bool isDirectory, bool exists, bool reloadIcon = false)
+    {
+        var dirChanged = _model.IsDirectory != isDirectory;
+        var existsChanged = _exists != exists;
+        _model.IsDirectory = isDirectory;
+        _exists = exists;
+
+        if (reloadIcon || dirChanged)
+        {
+            _icon = null;
+            _iconLoading = false;
+            Raise(nameof(Icon));
+        }
+
+        if (dirChanged)
+        {
+            Raise(nameof(IsDirectory));
+            Raise(nameof(Name));
+        }
+
+        if (existsChanged)
+        {
+            Raise(nameof(Exists));
+            Raise(nameof(IsMissing));
+        }
+
+        if (dirChanged || existsChanged)
+        {
+            Raise(nameof(Tooltip));
+        }
+    }
+
+    /// <summary>刷新路径相关的显示（路径不存在状态变化或编辑路径时调用）。</summary>
+    public void Refresh(bool? probedExists = null)
     {
         _icon = null;
         _iconLoading = false;
+        _exists = probedExists;
         Raise(nameof(Icon));
         Raise(nameof(Path));
         Raise(nameof(StoredPath));
+        Raise(nameof(IsDirectory));
         Raise(nameof(Name));
         Raise(nameof(Tooltip));
         Raise(nameof(Exists));
@@ -169,7 +204,9 @@ public sealed class ShortcutViewModel : ObservableObject
     public void ChangePath(string newFullPath)
     {
         _model.Path = PathResolver.ToStoragePath(newFullPath);
-        _model.IsDirectory = Directory.Exists(newFullPath);
-        Refresh();
+        var isDir = Directory.Exists(newFullPath);
+        _model.IsDirectory = isDir;
+        var exists = isDir || File.Exists(newFullPath);
+        Refresh(probedExists: exists);
     }
 }

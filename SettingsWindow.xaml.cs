@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using ShortcutManager.Models;
 using ShortcutManager.Services;
@@ -13,6 +12,7 @@ public partial class SettingsWindow : Window
     private readonly SettingsViewModel _vm;
     private readonly GlobalHotkeyManager _hotkeys;
     private bool _loaded;
+    private bool _syncingModifiers;
 
     public SettingsWindow(SettingsViewModel vm, GlobalHotkeyManager hotkeys)
     {
@@ -29,44 +29,28 @@ public partial class SettingsWindow : Window
         if (_loaded) return;
         _loaded = true;
 
-        // 关闭行为
         CloseToTrayRadio.IsChecked = _vm.CloseToTray;
         CloseToExitRadio.IsChecked = !_vm.CloseToTray;
         CloseToTrayRadio.Checked += (_, _) => _vm.CloseToTray = true;
         CloseToExitRadio.Checked += (_, _) => _vm.CloseToTray = false;
 
-        // 快捷键修饰键
-        ModAlt.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Alt) != 0;
-        ModCtrl.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Ctrl) != 0;
-        ModShift.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Shift) != 0;
-        ModWin.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Win) != 0;
-
-        ModAlt.Checked += (_, _) => UpdateModifiers();
-        ModAlt.Unchecked += (_, _) => UpdateModifiers();
-        ModCtrl.Checked += (_, _) => UpdateModifiers();
-        ModCtrl.Unchecked += (_, _) => UpdateModifiers();
-        ModShift.Checked += (_, _) => UpdateModifiers();
-        ModShift.Unchecked += (_, _) => UpdateModifiers();
-        ModWin.Checked += (_, _) => UpdateModifiers();
-        ModWin.Unchecked += (_, _) => UpdateModifiers();
+        SyncModifierCheckboxes();
+        ModAlt.Checked += OnModifierChanged;
+        ModAlt.Unchecked += OnModifierChanged;
+        ModCtrl.Checked += OnModifierChanged;
+        ModCtrl.Unchecked += OnModifierChanged;
+        ModShift.Checked += OnModifierChanged;
+        ModShift.Unchecked += OnModifierChanged;
+        ModWin.Checked += OnModifierChanged;
+        ModWin.Unchecked += OnModifierChanged;
 
         HotkeyKeyBox.Text = KeyToString(_vm.Key);
+    }
 
-        // 其余开关
-        AutoStartCheck.IsChecked = _vm.AutoStart;
-        StartMinimizedCheck.IsChecked = _vm.StartMinimized;
-        AutoStartCheck.Checked += (_, _) => _vm.AutoStart = true;
-        AutoStartCheck.Unchecked += (_, _) => _vm.AutoStart = false;
-        StartMinimizedCheck.Checked += (_, _) => _vm.StartMinimized = true;
-        StartMinimizedCheck.Unchecked += (_, _) => _vm.StartMinimized = false;
-
-        // 窗口与打开方式
-        KeepFrontCheck.IsChecked = _vm.KeepFrontAfterOpen;
-        AlwaysOnTopCheck.IsChecked = _vm.AlwaysOnTop;
-        KeepFrontCheck.Checked += (_, _) => _vm.KeepFrontAfterOpen = true;
-        KeepFrontCheck.Unchecked += (_, _) => _vm.KeepFrontAfterOpen = false;
-        AlwaysOnTopCheck.Checked += (_, _) => _vm.AlwaysOnTop = true;
-        AlwaysOnTopCheck.Unchecked += (_, _) => _vm.AlwaysOnTop = false;
+    private void OnModifierChanged(object sender, RoutedEventArgs e)
+    {
+        if (_syncingModifiers) return;
+        UpdateModifiers();
     }
 
     private void UpdateModifiers()
@@ -81,7 +65,6 @@ public partial class SettingsWindow : Window
         _vm.Modifiers = mods;
         if (_vm.Modifiers == before && mods == 0)
         {
-            // 视图模型拒绝了「零修饰键」：把勾选状态拉回去，避免界面和实际注册不一致
             SyncModifierCheckboxes();
             return;
         }
@@ -91,23 +74,34 @@ public partial class SettingsWindow : Window
 
     private void SyncModifierCheckboxes()
     {
-        ModAlt.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Alt) != 0;
-        ModCtrl.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Ctrl) != 0;
-        ModShift.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Shift) != 0;
-        ModWin.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Win) != 0;
+        _syncingModifiers = true;
+        try
+        {
+            ModAlt.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Alt) != 0;
+            ModCtrl.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Ctrl) != 0;
+            ModShift.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Shift) != 0;
+            ModWin.IsChecked = (_vm.Modifiers & (int)HotkeyModifiers.Win) != 0;
+        }
+        finally
+        {
+            _syncingModifiers = false;
+        }
     }
 
     private void HotkeyKeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        // 捕获主键：忽略纯修饰键（Alt/Ctrl/Shift/Win），只接受可作主键的键
-        if (e.Key is Key.LeftAlt or Key.RightAlt or Key.LeftCtrl or Key.RightCtrl
-            or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin)
+        // 先解包 Key.System（按住 Alt 或按 F10 时真实按键在 e.SystemKey）
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+
+        // 忽略纯修饰键（Alt/Ctrl/Shift/Win），只接受可作主键的键
+        if (key is Key.LeftAlt or Key.RightAlt or Key.LeftCtrl or Key.RightCtrl
+            or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or Key.None)
         {
             e.Handled = true;
             return;
         }
 
-        var vk = KeyToVirtualKey(e.Key);
+        var vk = KeyToVirtualKey(key);
         if (vk <= 0)
         {
             e.Handled = true;
@@ -115,7 +109,7 @@ public partial class SettingsWindow : Window
         }
 
         _vm.Key = vk;
-        HotkeyKeyBox.Text = KeyToString(e.Key == Key.System ? e.SystemKey : e.Key);
+        HotkeyKeyBox.Text = KeyToString(key);
         e.Handled = true;
         TryRegister();
     }
@@ -137,8 +131,6 @@ public partial class SettingsWindow : Window
 
     /// <summary>给 App 层读取最终生效的设置（与主窗口共用同一对象，避免覆盖窗口位置等字段）。</summary>
     public AppSettings AppliedSettings => _vm.Commit();
-
-    // ---- 键码/字符串转换 ----
 
     private static int KeyToVirtualKey(Key key)
     {

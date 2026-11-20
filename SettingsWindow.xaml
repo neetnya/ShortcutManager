@@ -19,12 +19,6 @@
 
     <Window.Resources>
         <ResourceDictionary>
-            <SolidColorBrush x:Key="Accent" Color="#2F6FED" />
-            <SolidColorBrush x:Key="AccentSoft" Color="#E7EFFE" />
-            <SolidColorBrush x:Key="Line" Color="#E1E5EE" />
-            <SolidColorBrush x:Key="Muted" Color="#7A869A" />
-            <SolidColorBrush x:Key="Hover" Color="#EAEEF7" />
-
             <Style x:Key="PrimaryButton" TargetType="Button">
                 <Setter Property="Height" Value="32" />
                 <Setter Property="Padding" Value="20,0" />
@@ -117,17 +111,19 @@
             <!-- 开机自启 + 启动最小化 -->
             <Border Grid.Row="2" Style="{StaticResource SectionCard}">
                 <StackPanel>
-                    <CheckBox x:Name="AutoStartCheck" Content="开机自动启动" Margin="0,0,0,10" />
-                    <CheckBox x:Name="StartMinimizedCheck" Content="启动后最小化到托盘（后台运行，不弹出窗口）" />
+                    <CheckBox Content="开机自动启动" IsChecked="{Binding AutoStart, Mode=TwoWay}" Margin="0,0,0,10" />
+                    <CheckBox Content="启动后最小化到托盘（后台运行，不弹出窗口）" IsChecked="{Binding StartMinimized, Mode=TwoWay}" />
                 </StackPanel>
             </Border>
 
-            <!-- 窗口与打开方式（连续打开多个程序时，窗口不再被盖住） -->
+            <!-- 窗口与打开方式 -->
             <Border Grid.Row="3" Style="{StaticResource SectionCard}">
                 <StackPanel>
                     <TextBlock Text="窗口与打开方式" FontWeight="SemiBold" Margin="0,0,0,4" />
-                    <CheckBox x:Name="KeepFrontCheck" Content="打开条目后窗口置顶 4 秒，方便接着开下一个" Margin="0,0,0,10" />
-                    <CheckBox x:Name="AlwaysOnTopCheck" Content="窗口始终置顶（钉在最前面，不会被别的程序盖住）" />
+                    <CheckBox Content="打开条目后窗口置顶 4 秒，方便接着开下一个"
+                              IsChecked="{Binding KeepFrontAfterOpen, Mode=TwoWay}" Margin="0,0,0,10" />
+                    <CheckBox Content="窗口始终置顶（钉在最前面，不会被别的程序盖住）"
+                              IsChecked="{Binding AlwaysOnTop, Mode=TwoWay}" />
                 </StackPanel>
             </Border>
 
